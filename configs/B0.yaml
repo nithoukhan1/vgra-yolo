@@ -1,0 +1,4 @@
+# B0: stock YOLO11s, single view. Plain baseline.
+model:
+  scc: false
+  vgra: "off"

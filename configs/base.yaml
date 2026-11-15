@@ -81,10 +81,16 @@ loss:
   w_pres: 0.25
 
 train:
-  imgsz: null          # set in STEP-03
-  epochs: null         # set per stage in STEP-03 / STEP-09
-  batch: null
-  p_drop: 0.3          # partner dropout
+  train_set: orig      # orig = originals only | orig+aug = originals plus offline copies
+  imgsz: null          # fixed after the timing run in STEP-03; until then pass --imgsz
+  # Detector training (stage 1). Other settings are the Ultralytics defaults.
+  epochs: 100
+  patience: 50
+  batch: 16
+  optimizer: SGD
+  lr0: 0.01
+  workers: 4
+  p_drop: 0.3          # partner dropout (VGRA training, later steps)
   seeds: [0, 1, 2]
 
 out_dir: /kaggle/working/runs

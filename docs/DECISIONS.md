@@ -17,4 +17,8 @@ One dated line per decision, with the reason. Newest at the bottom.
 | 2026-11-15 | `index.csv` is kept as the Kaggle Dataset `vgra-index` and outside git; small EDA tables go in `results/eda/` | Building the index takes about 36 minutes on Kaggle |
 | 2026-11-16 | Gate 1 passed: 91.4% of images are in a pair; see `docs/EDA.md` | Measured on the real labels |
 | 2026-11-16 | View coding fixed: projection 1 = ap, 2 = lat | 563 of 566 pronator sign images are projection 2 |
+| 2026-11-16 | SCC lives in `vgra/scc.py` (`SCC`, `SCCAdapter`, `C3K2_SCC`); `add_scc` swaps backbone layers 2 and 4 of a stock YOLO11 model and copies the native weights | Ultralytics stays unedited; a model with fresh adapters gives exactly the stock outputs (checked) |
+| 2026-11-16 | Detectors train on the originals only, through a list of image paths written from `index.csv` | The Kaggle dataset is read-only and mixes originals with offline copies |
+| 2026-11-16 | Detector training settings: 100 epochs, patience 50, batch 16, SGD with lr0 0.01, other Ultralytics defaults; the same for every model | Epochs and patience follow the defaults of Ju et al.; one fixed recipe keeps comparisons fair |
+| 2026-11-16 | The adapter's `alpha` stays in the weight-decay group, as in the original design; tanh(alpha) is logged every epoch in `scc_strength.csv` | Shows whether the adapters switch on; revisit only if they stay near zero |
 | 2026-11-16 | Candidate classes for the gate: periostealreaction, fracture, boneanomaly, metal; softtissue weak; pronatorsign not usable with a same-class gate. Final list is set at the spec freeze after the oracle run | The AP image never shows a pronator sign; see `docs/EDA.md` section 7 |

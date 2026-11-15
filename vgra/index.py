@@ -80,6 +80,18 @@ def read_label(path: str | os.PathLike, n_classes: int) -> tuple[bool, list, str
     return True, counts, digest
 
 
+def locate_index(data_cfg: dict, override: str | None = None) -> Path:
+    """Find index.csv: an explicit path, then data.index_csv, then data.index_input."""
+    candidates = [override, data_cfg.get("index_csv"), data_cfg.get("index_input")]
+    for c in candidates:
+        if c and Path(c).is_file():
+            return Path(c)
+    raise FileNotFoundError(
+        "index.csv not found. Looked at: " + ", ".join(str(c) for c in candidates if c)
+        + ". Attach the Kaggle dataset that holds index.csv, or pass --index <path>."
+    )
+
+
 # ---------------------------------------------------------------- loading
 
 def load_metadata(data_cfg: dict) -> pd.DataFrame:

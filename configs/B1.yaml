@@ -1,0 +1,4 @@
+# B1: YOLO11s + SCC, single view. Measures SCC alone; the detector VGRA is later attached to.
+model:
+  scc: true
+  vgra: "off"
