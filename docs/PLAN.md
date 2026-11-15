@@ -5,8 +5,8 @@ Tick a step only after its pass check holds on Kaggle. Then merge to `main` and 
 | Done | Step | What | Where | Pass check |
 |---|---|---|---|---|
 | [x] | STEP-00 | Repo skeleton, pinned requirements, launcher notebook | Local + Kaggle | Kaggle clones, installs; `SETUP CHECK: PASS`; tests pass |
-| [ ] | STEP-01 | EDA part 1: image index and dataset checks | Kaggle CPU | Image and split totals match; no patient in two splits |
-| [ ] | STEP-02 | EDA part 2: pair audit (**Gate 1**) | Kaggle CPU | Enough pairs and one-view-only cases; gateable class list fixed |
+| [x] | STEP-01 | EDA part 1: image index and dataset checks | Kaggle CPU | Image and split totals match; no patient in two splits |
+| [x] | STEP-02 | EDA part 2: pair audit (**Gate 1**) | Kaggle CPU | Enough pairs and one-view-only cases; gateable class list fixed |
 | [ ] | STEP-03 | SCC and detectors B0, B1 | Kaggle GPU | B1 with fresh adapters equals pretrained YOLO11s; saves and reloads |
 | [ ] | STEP-04 | Premise test (**Gate 2**), inference only | Kaggle GPU | Partner class scores help separate true/false detections |
 | [ ] | STEP-05 | Pair loader | Local + Kaggle | 20 batches inspected; pairs and labels intact |
