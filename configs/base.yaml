@@ -5,10 +5,37 @@
 exp_id: base
 
 data:
-  root: /kaggle/input/CHANGE_ME          # dataset folder on Kaggle (STEP-01)
+  # Dataset folder on Kaggle: GRAZPEDWRI-DX with the patient-level split of Ju et al.
+  root: /kaggle/input/datasets/nithoukhan/grazpedwri-dx-aug/GRAZPEDWRI-DX
+  meta_csv: dataset.csv
+  # The split is defined by these three files. It is never re-generated.
+  split_csvs:
+    train: train_data.csv
+    valid: valid_data.csv
+    test: test_data.csv
+  data_dir: data                         # holds images/<folder> and labels/<folder>
+  folders:
+    train: train_aug                     # originals (orig_*) and offline copies (aug_*)
+    valid: valid
+    test: test
+  # File-name prefix -> variant. A name without a prefix is an original.
+  variant_prefixes:
+    orig_: orig
+    aug_: aug
+  # Projection code in dataset.csv -> view. Other codes become "other".
+  views:
+    1: ap
+    2: lat
+  # Totals the index must reproduce (base images = originals).
+  expect:
+    images: 20327
+    train: 14204
+    valid: 4094
+    test: 2029
   index_csv: /kaggle/working/index.csv   # written by scripts/01_build_index.py
+  eda_dir: /kaggle/working/eda           # EDA tables as CSV
   pairs_csv: /kaggle/working/pairs.csv   # written by scripts/02_pair_audit.py
-  # Class order must match the label files. To verify in STEP-01.
+  # Class order, verified against data/meta.yaml.
   classes:
     - boneanomaly
     - bonelesion
