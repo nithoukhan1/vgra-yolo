@@ -1,0 +1,19 @@
+item,value
+metadata rows,20327
+patients,6091
+image files on disk,34531
+base images (one per filestem),20327
+files in test / variant orig,2029
+files in train_aug / variant aug,14204
+files in train_aug / variant orig,14204
+files in valid / variant orig,4094
+train: images,14204
+train: patients,4263
+train: images with no boxes,10
+valid: images,4094
+valid: patients,1218
+valid: images with no boxes,2
+test: images,2029
+test: patients,610
+test: images with no boxes,3
+boxes in base images,47443

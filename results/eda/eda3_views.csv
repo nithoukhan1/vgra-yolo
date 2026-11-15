@@ -1,0 +1,4 @@
+projection,view,train,valid,test,all
+1,ap,7051,2030,1005,10086
+2,lat,7087,2047,1014,10148
+3,other,66,17,10,93

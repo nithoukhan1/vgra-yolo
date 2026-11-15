@@ -1,0 +1,10 @@
+class,train_boxes,train_images,valid_boxes,valid_images,test_boxes,test_images,all_boxes,all_images,pct_images
+boneanomaly,184,121,53,38,39,33,276,192,0.94
+bonelesion,26,26,8,8,11,8,45,42,0.21
+foreignbody,8,8,0,0,0,0,8,8,0.04
+fracture,12612,9485,3740,2755,1738,1310,18090,13550,66.66
+metal,567,488,168,147,83,72,818,707,3.48
+periostealreaction,2409,1557,697,458,347,220,3453,2235,11.0
+pronatorsign,408,407,104,104,55,55,567,566,2.78
+softtissue,316,299,89,84,59,56,464,439,2.16
+text,16588,14170,4754,4085,2380,2019,23722,20274,99.74
