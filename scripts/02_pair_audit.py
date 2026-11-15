@@ -67,11 +67,21 @@ def main() -> int:
 
     states = pd.concat([pr.eda_states(pairs, classes, s) for s in ("all",) + pr.SPLITS], ignore_index=True)
     gate_table, gate_lines, gate_ok = pr.gate1(index, pairs, classes, data["gate1"])
+    # cross-class table: leave out text (present everywhere) and foreignbody (4 pairs)
+    cc_classes = [c for c in classes if c not in ("text", "foreignbody")]
+    cc_lat, cc_counts_ap = pr.eda_cross_class(pairs, cc_classes, target_view="lat")
+    cc_ap, cc_counts_lat = pr.eda_cross_class(pairs, cc_classes, target_view="ap")
     tables = {
         "eda5_pairing": ("EDA-5 pairing", pr.eda_pairing(index, pairs)),
         "eda6_class_by_view": ("EDA-6 class presence by view (all base images)", pr.eda_class_by_view(index, classes)),
         "eda7_states": ("EDA-7 four-state counts per class (all pairs, then per split)", states),
         "eda7b_partner_lift": ("EDA-7b what the partner's label says about the target's", pr.eda_partner_lift(pairs, classes)),
+        "eda7c_partner_counts": ("EDA-7c pairs where the AP image has the class", cc_counts_ap),
+        "eda7c_cross_class_target_lat": (
+            "EDA-7c target = LAT image: P(LAT has row class | AP partner has column class)", cc_lat),
+        "eda7c_partner_counts_lat": ("EDA-7c pairs where the LAT image has the class", cc_counts_lat),
+        "eda7c_cross_class_target_ap": (
+            "EDA-7c target = AP image: P(AP has row class | LAT partner has column class)", cc_ap),
         "eda8_exam_type": ("EDA-8 pairs by exam type", pr.eda_exam_type(pairs)),
         "gate1_classes": ("Gate 1 per class (training pairs)", gate_table),
     }

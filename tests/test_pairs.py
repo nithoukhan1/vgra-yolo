@@ -71,6 +71,19 @@ def test_eda_states_and_lift():
     assert lift.loc["pronatorsign", "p_lat"] == round(1 / 3, 4)
 
 
+def test_cross_class():
+    pairs = pr.build_pairs(make_index(), CLASSES)
+    matrix, counts = pr.eda_cross_class(pairs, CLASSES, target_view="lat", min_partner=1)
+    m = matrix.set_index("target_class")
+    # AP has fracture in 2 pairs; the LAT image has pronator sign in 1 of them
+    assert counts.set_index("partner_class").loc["fracture", "pairs_where_partner_has_it"] == 2
+    assert m.loc["pronatorsign", "if_fracture"] == 0.5
+    assert m.loc["pronatorsign", "base"] == 0.333
+    # with the default minimum of 30 partner pairs the cell is left empty
+    strict, _ = pr.eda_cross_class(pairs, CLASSES, target_view="lat")
+    assert strict["if_fracture"].isna().all()
+
+
 def test_class_by_view():
     table = pr.eda_class_by_view(make_index(), CLASSES).set_index("class")
     assert table.loc["fracture", "ap_images"] == 2 and table.loc["fracture", "lat_images"] == 2

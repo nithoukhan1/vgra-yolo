@@ -155,6 +155,34 @@ def eda_partner_lift(pairs: pd.DataFrame, classes: list) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def eda_cross_class(pairs: pd.DataFrame, classes: list, target_view: str,
+                    min_partner: int = 30) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """EDA-7c: does class d in the partner view predict class c in the target view?
+
+    Returns (matrix, counts). In the matrix, row = class c in the target view,
+    column `if_<d>` = P(target has c | partner has d), and `base` = P(target has c).
+    A value far above `base` means the partner's class d is evidence for c.
+    Columns with fewer than `min_partner` pairs are left empty.
+    `counts` gives, per class d, the number of pairs where the partner has d.
+    """
+    t = 0 if target_view == "ap" else 1
+    p = 1 - t
+    has_t = {c: pairs[f"state_{c}"].str[t] == "1" for c in classes}
+    has_p = {c: pairs[f"state_{c}"].str[p] == "1" for c in classes}
+    n_partner = {d: int(has_p[d].sum()) for d in classes}
+    rows = []
+    for c in classes:
+        row = {"target_class": c, "n_target": int(has_t[c].sum()), "base": round(float(has_t[c].mean()), 3)}
+        for d in classes:
+            if n_partner[d] >= min_partner:
+                row[f"if_{d}"] = round(int((has_t[c] & has_p[d]).sum()) / n_partner[d], 3)
+            else:
+                row[f"if_{d}"] = None
+        rows.append(row)
+    counts = pd.DataFrame([{"partner_class": d, "pairs_where_partner_has_it": n_partner[d]} for d in classes])
+    return pd.DataFrame(rows), counts
+
+
 def eda_exam_type(pairs: pd.DataFrame, focus_class: str = "fracture") -> pd.DataFrame:
     """EDA-8: pairs by exam type, with the focus class's one-view-only share."""
     label = {(1, 0): "initial, no cast", (0, 0): "follow-up, no cast",

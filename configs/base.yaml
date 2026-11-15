@@ -35,7 +35,7 @@ data:
   index_csv: /kaggle/working/index.csv   # written by scripts/01_build_index.py
   # Saved copy of index.csv as a Kaggle Dataset, used when index_csv is absent
   # (building the index takes about 36 minutes on Kaggle).
-  index_input: /kaggle/input/datasets/nithoukhan/vgra-index/index.csv
+  index_input: /kaggle/input/datasets/nithoukhan1/vgra-index/index.csv
   eda_dir: /kaggle/working/eda           # EDA tables as CSV
   pairs_csv: /kaggle/working/pairs.csv   # written by scripts/02_pair_audit.py
   # Gate 1 starting thresholds (STEP-02). The final decision is made by us.
