@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vgra"
+version = "0.0.0"
+description = "VGRA-YOLO: paired AP/LAT detection on GRAZPEDWRI-DX (YOLO11s + SCC + VGRADetect)"
+requires-python = ">=3.9"
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["vgra*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

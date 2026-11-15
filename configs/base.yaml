@@ -1,0 +1,54 @@
+# Shared settings for all experiments.
+# An experiment file (B0.yaml, V1.yaml, ...) lists only the keys that differ.
+# Values marked CHANGE_ME or null are filled in at the step named in the comment.
+
+exp_id: base
+
+data:
+  root: /kaggle/input/CHANGE_ME          # dataset folder on Kaggle (STEP-01)
+  index_csv: /kaggle/working/index.csv   # written by scripts/01_build_index.py
+  pairs_csv: /kaggle/working/pairs.csv   # written by scripts/02_pair_audit.py
+  # Class order must match the label files. To verify in STEP-01.
+  classes:
+    - boneanomaly
+    - bonelesion
+    - foreignbody
+    - fracture
+    - metal
+    - periostealreaction
+    - pronatorsign
+    - softtissue
+    - text
+  # Classes VGRA acts on. To confirm in STEP-02.
+  gateable:
+    - fracture
+    - periostealreaction
+    - pronatorsign
+    - softtissue
+    - metal
+    - boneanomaly
+
+model:
+  weights: yolo11s.pt
+  scc: true            # SCC adapters in backbone layers 2 and 4
+  vgra: "off"          # off | oracle | learned
+  descriptor: cqp      # cqp | pooled | scores
+  d_desc: 64
+  vsh: shared          # shared | per_class
+  gate: signed         # signed | unsigned | none
+  gate_grad: detached  # detached | attached
+  rank: 16
+  cap: 2.0
+
+loss:
+  w_vis: 0.5
+  w_pres: 0.25
+
+train:
+  imgsz: null          # set in STEP-03
+  epochs: null         # set per stage in STEP-03 / STEP-09
+  batch: null
+  p_drop: 0.3          # partner dropout
+  seeds: [0, 1, 2]
+
+out_dir: /kaggle/working/runs

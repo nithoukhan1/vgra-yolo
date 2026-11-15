@@ -1,0 +1,7 @@
+# Only Ultralytics is pinned: it is the library our code plugs into.
+# torch, numpy and pandas come from the Kaggle image and are not re-pinned here,
+# because forcing other versions can break the Kaggle environment.
+ultralytics==8.4.7
+pyyaml
+pandas
+pytest
