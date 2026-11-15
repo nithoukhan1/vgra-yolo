@@ -33,8 +33,17 @@ data:
     valid: 4094
     test: 2029
   index_csv: /kaggle/working/index.csv   # written by scripts/01_build_index.py
+  # Saved copy of index.csv as a Kaggle Dataset, used when index_csv is absent
+  # (building the index takes about 36 minutes on Kaggle).
+  index_input: /kaggle/input/datasets/nithoukhan/vgra-index/index.csv
   eda_dir: /kaggle/working/eda           # EDA tables as CSV
   pairs_csv: /kaggle/working/pairs.csv   # written by scripts/02_pair_audit.py
+  # Gate 1 starting thresholds (STEP-02). The final decision is made by us.
+  gate1:
+    min_pair_image_share: 0.70           # share of base images that sit in a pair
+    min_one_view_pairs_train: 100        # one-view-only training pairs a class needs
+    min_one_view_share: 0.10             # ... and their share of pairs where the class is present
+    min_classes: 3                       # classes that must meet both
   # Class order, verified against data/meta.yaml.
   classes:
     - boneanomaly
