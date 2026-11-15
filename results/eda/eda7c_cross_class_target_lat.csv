@@ -1,0 +1,8 @@
+target_class,n_target,base,if_boneanomaly,if_bonelesion,if_fracture,if_metal,if_periostealreaction,if_pronatorsign,if_softtissue
+boneanomaly,57,0.006,0.444,,0.003,0.053,0.0,,0.016
+bonelesion,13,0.001,0.0,,0.001,0.0,0.0,,0.0
+fracture,6378,0.687,0.359,,0.977,0.831,0.996,,0.797
+metal,323,0.035,0.205,,0.047,0.997,0.054,,0.062
+periostealreaction,1001,0.108,0.12,,0.166,0.119,0.717,,0.031
+pronatorsign,521,0.056,0.009,,0.072,0.006,0.004,,0.406
+softtissue,341,0.037,0.077,,0.037,0.034,0.007,,0.375

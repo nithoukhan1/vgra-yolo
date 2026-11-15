@@ -1,0 +1,10 @@
+class,ap_images,lat_images,other_images,pct_of_ap_images,pct_of_lat_images,lat_share_of_class
+boneanomaly,122,68,2,1.21,0.67,35.8
+bonelesion,28,14,0,0.28,0.14,33.3
+foreignbody,4,4,0,0.04,0.04,50.0
+fracture,6553,6924,73,64.97,68.23,51.4
+metal,351,353,3,3.48,3.48,50.1
+periostealreaction,1154,1072,9,11.44,10.56,48.2
+pronatorsign,3,563,0,0.03,5.55,99.5
+softtissue,72,366,1,0.71,3.61,83.6
+text,10059,10122,93,99.73,99.74,50.2

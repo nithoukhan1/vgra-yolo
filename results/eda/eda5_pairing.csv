@@ -1,0 +1,5 @@
+split,study_sides,pairs,pct_study_sides_paired,images,images_in_pairs,pct_images_in_pairs,unpaired_images
+train,7601,6475,85.19,14204,12950,91.17,1254
+valid,2165,1884,87.02,4094,3768,92.04,326
+test,1076,929,86.34,2029,1858,91.57,171
+all,10842,9288,85.67,20327,18576,91.39,1751

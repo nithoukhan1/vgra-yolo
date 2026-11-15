@@ -1,0 +1,10 @@
+class,present,one_view_only,pct_one_view_of_present,enough_pairs,enough_share,has_mass
+boneanomaly,79,45,57.0,False,True,False
+bonelesion,17,9,52.9,False,True,False
+foreignbody,4,0,0.0,False,False,False
+fracture,4552,473,10.4,True,True,True
+metal,229,5,2.2,False,False,False
+periostealreaction,904,363,40.2,True,True,True
+pronatorsign,371,370,99.7,True,True,True
+softtissue,260,247,95.0,True,True,True
+text,6474,30,0.5,False,False,False

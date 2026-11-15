@@ -1,0 +1,5 @@
+exam_type,pairs,train,valid,test,fracture_present,fracture_one_view_only,pct_one_view_of_present
+"initial, no cast",5003,3489,1002,512,2338,473,20.2
+"follow-up, cast",2606,1829,536,241,2561,117,4.6
+"follow-up, no cast",1677,1156,345,176,1615,68,4.2
+"initial, cast",2,1,1,0,1,0,0.0

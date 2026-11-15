@@ -14,3 +14,7 @@ One dated line per decision, with the reason. Newest at the bottom.
 | 2026-11-15 | Split = patient-level split of Ju et al., read from `train_data.csv`, `valid_data.csv`, `test_data.csv`; their `split.py` is never re-run | The dataset has no official split; this one is public and patient-level; the script has no random seed, so only the files define it |
 | 2026-11-15 | In `train_aug`, `orig_*` files are originals and `aug_*` files are offline brightness/contrast copies with identical labels; EDA and pairs use originals only | A copy is the same radiograph, not a new image or pair |
 | 2026-11-15 | Pair unit is the study-side: patient + study + wrist side | Some studies contain both wrists |
+| 2026-11-15 | `index.csv` is kept as the Kaggle Dataset `vgra-index` and outside git; small EDA tables go in `results/eda/` | Building the index takes about 36 minutes on Kaggle |
+| 2026-11-16 | Gate 1 passed: 91.4% of images are in a pair; see `docs/EDA.md` | Measured on the real labels |
+| 2026-11-16 | View coding fixed: projection 1 = ap, 2 = lat | 563 of 566 pronator sign images are projection 2 |
+| 2026-11-16 | Candidate classes for the gate: periostealreaction, fracture, boneanomaly, metal; softtissue weak; pronatorsign not usable with a same-class gate. Final list is set at the spec freeze after the oracle run | The AP image never shows a pronator sign; see `docs/EDA.md` section 7 |
