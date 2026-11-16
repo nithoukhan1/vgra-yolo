@@ -14,6 +14,7 @@ Only pairs are used here. Unpaired images are handled single-view (VGRA off).
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -24,6 +25,13 @@ from ultralytics.data.dataset import YOLODataset
 from ultralytics.utils import DEFAULT_CFG
 
 PAIR_OFF = {"mosaic": 0.0, "mixup": 0.0, "cutmix": 0.0, "copy_paste": 0.0}  # one radiograph per image
+
+
+def path_key(path) -> str:
+    """One spelling for a file path, so paths from index.csv match the paths Ultralytics returns.
+    Ultralytics turns '/' into the OS separator (backslash on Windows); case is ignored on Windows."""
+    text = str(path).replace("\\", "/")
+    return os.path.normcase(os.path.normpath(text)).replace("\\", "/")
 
 
 def pair_hyp(imgsz: int, overrides: dict | None = None):
@@ -57,16 +65,16 @@ class PairDataset(Dataset):
             img_path=str(list_file), imgsz=int(imgsz), augment=bool(augment), hyp=pair_hyp(imgsz, hyp_overrides),
             rect=False, stride=32, pad=0.0, prefix=f"pairs {split}: ", task="detect", data=data,
         )
-        position = {p: i for i, p in enumerate(self.images.im_files)}
-        missing = [p for p in ap_paths + lat_paths if p not in position]
+        position = {path_key(p): i for i, p in enumerate(self.images.im_files)}
+        missing = [p for p in ap_paths + lat_paths if path_key(p) not in position]
         if missing:
             raise RuntimeError(f"{len(missing)} pair images not loaded by Ultralytics, e.g. {missing[:2]}")
 
         self.split = split
         self.augment = bool(augment)
         self.pairs = rows
-        self.ap_index = [position[p] for p in ap_paths]
-        self.lat_index = [position[p] for p in lat_paths]
+        self.ap_index = [position[path_key(p)] for p in ap_paths]
+        self.lat_index = [position[path_key(p)] for p in lat_paths]
 
     def __len__(self) -> int:
         return len(self.pairs)

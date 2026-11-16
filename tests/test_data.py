@@ -1,5 +1,7 @@
 """STEP-05 tests: the paired loader on a tiny dataset with real images."""
 
+from pathlib import Path
+
 import pytest
 
 pytest.importorskip("torch")
@@ -41,12 +43,12 @@ def test_items_are_the_two_views_of_one_pair(tiny, tmp_path):
         item = ds[i]
         ap, lat = item["ap"]["im_file"], item["lat"]["im_file"]
         assert "WRI-L1" in ap and "WRI-L2" in lat
-        assert ap.rsplit("/", 1)[1][:4] == lat.rsplit("/", 1)[1][:4] == item["pair_id"][:4]
+        assert Path(ap).name[:4] == Path(lat).name[:4] == item["pair_id"][:4]
 
 
 def test_training_list_uses_originals_only(tiny, tmp_path):
     ds = make(tiny, "train", augment=True, tmp_path=tmp_path)
-    assert len(ds) == 11 and all("/orig_" in f for f in ds.images.im_files)
+    assert len(ds) == 11 and all(Path(f).name.startswith("orig_") for f in ds.images.im_files)
 
 
 def test_collate_layout_and_states(tiny, tmp_path):
@@ -73,3 +75,17 @@ def test_loader(tiny, tmp_path):
     b = batches[0]
     assert b["img"].shape == (8, 3, 128, 128)
     assert int(b["batch_idx"].max()) < 8
+
+
+def test_path_key_ignores_slash_style():
+    """index.csv writes '/', Ultralytics on Windows writes '\\'; both must match (failed on Windows before)."""
+    assert vd.path_key("C:/data/images/valid/a.png") == vd.path_key("C:\\data\\images\\valid\\a.png")
+    assert vd.path_key("/kaggle/input/x/../x/a.png") == vd.path_key("/kaggle/input/x/a.png")
+
+
+def test_dataset_accepts_backslash_paths(tiny, tmp_path):
+    """Simulates Windows: the index uses one slash style, the loaded file list the other."""
+    _, index, pairs = tiny
+    flipped = index.assign(path=index["path"].str.replace("/", "\\"))
+    keys = {vd.path_key(p) for p in flipped["path"]}
+    assert keys == {vd.path_key(p) for p in index["path"]}

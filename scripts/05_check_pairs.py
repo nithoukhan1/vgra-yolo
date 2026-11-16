@@ -127,7 +127,7 @@ def main() -> int:
           f"{len(train) + len(valid)} pairs, bad: {len(bad)} {bad[:3]}")
 
     # 2. batches
-    labels_of = index.set_index("path")
+    labels_of = index.assign(key=index["path"].map(vd.path_key)).set_index("key")
     has_cols = [f"has_{c}" for c in classes]
     layout_bad = class_bad = changed = pair_classes = 0
     seconds = []
@@ -153,7 +153,7 @@ def main() -> int:
                 row = train.pairs if split == "train" else valid.pairs
                 original = row.set_index("pair_id").loc[batch["pair_id"][i]]
                 for j in (i, n + i):
-                    allowed = labels_of.loc[batch["im_file"][j], has_cols].to_numpy().astype(bool)
+                    allowed = labels_of.loc[vd.path_key(batch["im_file"][j]), has_cols].to_numpy().astype(bool)
                     if (has[j].numpy().astype(bool) & ~allowed).any():
                         class_bad += 1
                 for c, name in enumerate(classes):
