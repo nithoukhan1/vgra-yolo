@@ -11,7 +11,7 @@ git commit -m "STEP-02: tick plan"
 git push] | STEP-02 | EDA part 2: pair audit (**Gate 1**) | Kaggle CPU | Enough pairs and one-view-only cases; gateable class list fixed |
 | [ ] | STEP-03 | SCC and detectors B0, B1 | Kaggle GPU | B1 with fresh adapters equals pretrained YOLO11s; saves and reloads |
 | [ ] | STEP-04 | Premise test (**Gate 2**), inference only | Kaggle GPU | Partner class scores help separate true/false detections |
-| [ ] | STEP-05 | Pair loader | Local + Kaggle | 20 batches inspected; pairs and labels intact |
+| [x] | STEP-05 | Pair loader | Local + Kaggle | 20 batches inspected; pairs and labels intact |
 | [ ] | STEP-06 | CQP, VSH, GRA | Local CPU | Shapes correct; correction exactly 0 at start and without partner |
 | [ ] | STEP-07 | `VGRADetect` head | Kaggle GPU | Predictions identical to B1 with zero correction; saves, reloads, copies |
 | [ ] | STEP-08 | Oracle run (**Gate 3**) | Kaggle GPU | Beats B1 beyond seed noise on weak classes |
