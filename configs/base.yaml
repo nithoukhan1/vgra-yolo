@@ -93,6 +93,7 @@ train:
   # Background runs on Kaggle stop cleanly before the 12-hour limit and continue in the next version.
   max_hours: 11.0      # time budget per session, counted from the start of the training script
   reserve_minutes: 20  # kept free for the final evaluation and for saving the output
+  pair_batch: 8        # pairs per batch for VGRA training (16 images, same as the detector batch)
   p_drop: 0.3          # partner dropout (VGRA training, later steps)
   seeds: [0, 1, 2]
 
