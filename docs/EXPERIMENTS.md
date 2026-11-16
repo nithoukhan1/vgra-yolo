@@ -10,6 +10,8 @@ One row per run, including failed runs (say why in the note). Never delete a row
 | B1_s0_smoke1024 | 4f6e686 | 2026-11-16 | valid | 0.2719 | 0.1753 | timing test | Same with cache=ram: 0.96 s per batch (no gain), so image decoding is not the limit. mAP differs because of a different preprocessing path |
 | B0_s0_smoke1024 | 4f6e686 | 2026-11-16 | valid | 0.1801 | 0.1173 | timing test | Parallel test, GPU 0, running together with B1: 1.11 s per batch; est. 16.5 + 2.4 min per epoch; peak 10.0 GB |
 | B1_s0_smoke1024 | 4f6e686 | 2026-11-16 | valid | 0.2434 | 0.1648 | timing test | Parallel test, GPU 1, running together with B0: 1.17 s per batch; est. 17.4 + 3.0 min per epoch; peak 10.8 GB |
+| B0_s0 | 60fc83f | 2026-11-16 | valid | - | - | failed (version 1) | Crashed at start: `yolo26n.pt` / `yolo11s.pt` was downloaded by both runs at the same moment and B0 read a broken file (`PytorchStreamReader failed reading file ... archive is corrupted`). No checkpoint; restart from scratch in version 2. Fix: notebook downloads the weights once before launching |
+| B1_s0 | 60fc83f | 2026-11-16 | valid | 0.628 | 0.4046 | stopped for time (version 1) | 50 of 100 epochs in one 11 h version, running alone on its GPU after B0 crashed (about 13 min per epoch with val). Resume in version 2 |
 
 Timing-test mAP after one epoch on 10% of the data says nothing about the final accuracy of either image size.
 

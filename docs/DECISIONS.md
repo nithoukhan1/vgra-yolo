@@ -41,3 +41,4 @@ One dated line per decision, with the reason. Newest at the bottom.
 | 2026-11-16 | Presence head: per-class linear scorer on the CQP descriptor, zero-initialised; state index = has_ap + 2 * has_lat (00, 10, 01, 11) | Simple and matches the batch labels |
 | 2026-11-16 | Descriptor 'scores' (A2c) is left for the ablation step | Needs the partner's class scores, which only exist inside `VGRADetect` |
 | 2026-11-16 | Measured: VGRA adds 138,128 parameters (1.44% of YOLO11s + SCC); CPU at 1024 with 8 pairs: VGRA forward + backward 1.0 s vs detector forward 13.8 s | `scripts/06_check_modules.py` |
+| 2026-11-17 | The training notebook downloads `yolo11s.pt` and `yolo26n.pt` (AMP check) once before launching parallel runs; training code and tag `detectors-v1` unchanged | Ultralytics writes downloads straight to the final file; two runs downloading at once corrupted the file and crashed B0_s0 version 1 |
