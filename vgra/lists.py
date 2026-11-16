@@ -8,6 +8,8 @@ paths we want and point Ultralytics at it. Labels are found from the image path
 
 from __future__ import annotations
 
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pandas as pd
@@ -24,6 +26,47 @@ def train_image_paths(index: pd.DataFrame, train_set: str = "orig") -> list:
     if train_set == "orig":
         rows = rows[rows["is_base"]]
     return sorted(rows["path"].tolist())
+
+
+def files_to_warm(index: pd.DataFrame, train_set: str = "orig", fraction: float = 1.0,
+                  include_test: bool = False) -> list:
+    """Image and label files a training run will read: the training list (first `fraction`,
+    as Ultralytics takes it), the validation split and, if asked, the test split."""
+    train = train_image_paths(index, train_set)
+    if fraction < 1:
+        train = train[: round(len(train) * fraction)]
+    label_of = dict(zip(index["path"], index["label_path"]))
+    files = [p for path in train for p in (path, label_of[path])]
+    splits = ["valid"] + (["test"] if include_test else [])
+    rows = index[index["split"].isin(splits) & index["is_base"] & index["in_metadata"]]
+    files += [p for pair in zip(rows["path"], rows["label_path"]) for p in pair]
+    return files
+
+
+def warm_files(paths: list, threads: int = 32, chunk: int = 1 << 20) -> dict:
+    """Read every file once, in parallel, so that later reads come from memory.
+
+    On Kaggle the input datasets are slow on the first read of each file in a session;
+    after one read the operating system keeps the file in memory.
+    """
+
+    def read(path):
+        n = 0
+        try:
+            with open(path, "rb") as f:
+                while block := f.read(chunk):
+                    n += len(block)
+        except OSError:
+            return 0, 1
+        return n, 0
+
+    t0 = time.time()
+    total = errors = 0
+    with ThreadPoolExecutor(max_workers=threads) as pool:
+        for n, err in pool.map(read, paths):
+            total += n
+            errors += err
+    return {"files": len(paths), "bytes": total, "seconds": time.time() - t0, "errors": errors}
 
 
 def write_data_files(index: pd.DataFrame, data_cfg: dict, out_dir: str | Path, train_set: str = "orig") -> Path:

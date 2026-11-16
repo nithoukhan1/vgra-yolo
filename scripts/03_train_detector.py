@@ -4,7 +4,10 @@ Check the SCC swap (no training):
     python scripts/03_train_detector.py --config configs/B1.yaml --check
 
 Short timing run (1 epoch on a fraction of the training images):
-    python scripts/03_train_detector.py --config configs/B1.yaml --seed 0 --smoke --imgsz 640
+    python scripts/03_train_detector.py --config configs/B1.yaml --seed 0 --smoke --imgsz 1024
+
+The same, with the images held in memory (measures training speed without image loading):
+    python scripts/03_train_detector.py --config configs/B1.yaml --seed 0 --smoke --imgsz 1024 --cache ram
 
 Full run:
     python scripts/03_train_detector.py --config configs/B1.yaml --seed 0
@@ -13,6 +16,8 @@ Continue a run that was cut off:
     python scripts/03_train_detector.py --config configs/B1.yaml --seed 0 --resume <path to last.pt>
 
 One run uses one GPU (--device). Outputs go to <out_dir>/<run name>/.
+Before training, every image and label the run needs is read once in parallel (skip with --no-warm),
+because Kaggle input files are slow on their first read in a session.
 """
 
 from __future__ import annotations
@@ -30,7 +35,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # train arguments that are passed from the config to Ultralytics as they are
 PASS_THROUGH = ("epochs", "batch", "patience", "optimizer", "lr0", "cos_lr", "workers", "close_mosaic",
-                "warmup_epochs", "amp")
+                "warmup_epochs", "amp", "cache")
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,6 +49,9 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--fraction", type=float, default=0.1, help="share of training images in a smoke run")
     ap.add_argument("--resume", default=None, help="path to last.pt of the run to continue")
     ap.add_argument("--test", action="store_true", help="also evaluate on the test split (final runs only)")
+    ap.add_argument("--cache", choices=["ram"], default=None, help="keep resized images in memory (Ultralytics cache)")
+    ap.add_argument("--no-warm", action="store_true", help="skip reading the files into memory before training")
+    ap.add_argument("--warm-threads", type=int, default=32)
     ap.add_argument("--index", default=None, help="path to index.csv")
     ap.add_argument("--root", default=None, help="override data.root")
     ap.add_argument("--out", default=None, help="override out_dir")
@@ -146,6 +154,17 @@ def main() -> int:
     n_train_full = len(lists.train_image_paths(index, train_set))
     print(f"data file: {data_yaml} | train set: {train_set} ({n_train_full} images) | image size: {imgsz}")
 
+    if not args.no_warm:
+        import psutil
+
+        frac = float(args.fraction) if args.smoke else 1.0
+        files = lists.files_to_warm(index, train_set, frac, include_test=args.test)
+        w = lists.warm_files(files, threads=args.warm_threads)
+        mem = psutil.virtual_memory()
+        print(f"read {w['files']:,} files ({w['bytes'] / 1e9:.1f} GB) in {w['seconds'] / 60:.1f} min "
+              f"= {w['bytes'] / 1e6 / max(w['seconds'], 1e-9):.0f} MB/s, {w['files'] / max(w['seconds'], 1e-9):.0f} files/s, "
+              f"errors {w['errors']} | RAM total {mem.total / 1e9:.1f} GB, available {mem.available / 1e9:.1f} GB")
+
     from vgra.model import count_parameters, make_trainer
     from vgra.scc import scc_strengths
 
@@ -157,6 +176,8 @@ def main() -> int:
         overrides = {k: train_cfg[k] for k in PASS_THROUGH if train_cfg.get(k) is not None}
         overrides.update(model=weights, data=str(data_yaml), imgsz=int(imgsz), seed=int(args.seed),
                          project=str(out_root), name=name, exist_ok=True, device=args.device, plots=not args.smoke)
+        if args.cache:
+            overrides["cache"] = args.cache
         if args.smoke:
             overrides.update(epochs=1, fraction=float(args.fraction), patience=0)
 
@@ -167,6 +188,9 @@ def main() -> int:
 
     clock = {"train": [], "val": []}
     strength_csv = run_dir / "scc_strength.csv"
+
+    def on_train_start(t):
+        clock["setup"] = time.time() - clock["t0"]
 
     def on_train_epoch_start(t):
         clock["t_train"] = time.time()
@@ -193,11 +217,12 @@ def main() -> int:
                     w.writerow(["epoch"] + list(s))
                 w.writerow([t.epoch + 1] + [round(v, 6) for v in s.values()])
 
-    for event, fn in (("on_train_epoch_start", on_train_epoch_start), ("on_train_epoch_end", on_train_epoch_end),
+    for event, fn in (("on_train_start", on_train_start),
+                      ("on_train_epoch_start", on_train_epoch_start), ("on_train_epoch_end", on_train_epoch_end),
                       ("on_val_start", on_val_start), ("on_val_end", on_val_end), ("on_fit_epoch_end", on_fit_epoch_end)):
         trainer.add_callback(event, fn)
 
-    t0 = time.time()
+    t0 = clock["t0"] = time.time()
     trainer.train()
     total_s = time.time() - t0
 
@@ -212,6 +237,7 @@ def main() -> int:
         "run_name": name, "exp_id": cfg["exp_id"], "seed": int(args.seed), "commit": utils.git_commit(),
         "scc": use_scc, "imgsz": int(trainer.args.imgsz), "train_set": train_set,
         "epochs_this_session": len(clock["train"]), "epochs_total": epochs_total, "total_seconds": round(total_s),
+        "setup_seconds": round(clock.get("setup", 0.0)), "cache": str(trainer.args.cache),
         "train_seconds_per_epoch": round(sum(clock["train"]) / max(len(clock["train"]), 1), 1),
         "parameters": count_parameters(trainer.model),
         "scc_strength": {k: round(v, 6) for k, v in scc_strengths(
@@ -247,7 +273,10 @@ def main() -> int:
         val_s = clock["val"][0] if clock["val"] else float("nan")
         mem = torch.cuda.max_memory_allocated() / 1e9 if torch.cuda.is_available() else 0.0
         print("\n=== timing (smoke run) ===")
-        print(f"trained on {n_seen} images in {sum(clock['train']):.0f} s = {per_img:.3f} s per image (batch {batch})")
+        n_it = -(-n_seen // batch)
+        print(f"setup before the first epoch (model, label scan, image cache): {clock.get('setup', 0.0) / 60:.1f} min")
+        print(f"trained on {n_seen} images in {sum(clock['train']):.0f} s = {per_img:.3f} s per image, "
+              f"{sum(clock['train']) / max(n_it, 1):.2f} s per batch of {batch} | image cache: {trainer.args.cache}")
         print(f"estimated full epoch on {n_train_full} images: {per_img * n_train_full / 60:.1f} min training "
               f"+ {val_s / 60:.1f} min validation")
         print(f"peak GPU memory: {mem:.1f} GB")

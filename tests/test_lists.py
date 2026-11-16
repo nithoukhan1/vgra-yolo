@@ -54,3 +54,21 @@ def test_locate_index(tmp_path):
     assert locate_index({"index_csv": "nope"}, override=str(f)) == f
     with pytest.raises(FileNotFoundError):
         locate_index({"index_csv": "nope", "index_input": "nope2"})
+
+
+def test_files_to_warm():
+    index = make_index()
+    index["label_path"] = index["path"].str.replace("/images/", "/labels/").str.replace(".png", ".txt")
+    files = lists.files_to_warm(index, "orig")
+    assert files[:2] == ["/data/GRAZ/data/images/train_aug/orig_a.png", "/data/GRAZ/data/labels/train_aug/orig_a.txt"]
+    assert len(files) == 6  # 2 originals + 1 validation image, each with its label
+    assert len(lists.files_to_warm(index, "orig", fraction=0.5)) == 4
+    assert len(lists.files_to_warm(index, "orig+aug")) == 10
+
+
+def test_warm_files(tmp_path):
+    a, b = tmp_path / "a.bin", tmp_path / "b.bin"
+    a.write_bytes(b"x" * 3000)
+    b.write_bytes(b"y" * 5)
+    out = lists.warm_files([str(a), str(b), str(tmp_path / "missing")], threads=2, chunk=1024)
+    assert out["files"] == 3 and out["bytes"] == 3005 and out["errors"] == 1
