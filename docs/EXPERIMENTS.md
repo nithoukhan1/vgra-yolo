@@ -6,6 +6,10 @@ One row per run, including failed runs (say why in the note). Never delete a row
 |---|---|---|---|---|---|---|---|
 | B1_s0_smoke640 | 2495910 | 2026-11-16 | valid | 0.2577 | 0.1663 | timing test | 1 epoch on 10% of train (1,420 images). 1.1 it/s; est. 13.2 min train + 2.5 min val per full epoch; peak GPU 4.3 GB. First run of the session: label scan took about 10 min (cold disk). Harmless dataloader-thread error at exit |
 | B1_s0_smoke1024 | 2495910 | 2026-11-16 | valid | 0.2434 | 0.1648 | timing test | Same as above at 1024. 1.1 s/it; est. 15.6 min train + 2.1 min val per full epoch; peak GPU 10.8 GB. Files already cached, scan fast |
+| B1_s0_smoke1024 | 4f6e686 | 2026-11-16 | valid | 0.2434 | 0.1648 | timing test | New session with file warm-up: read 4.3 GB in 1.5 min (47 MB/s); setup 0.6 min; 0.96 s per batch; est. 14.3 + 2.0 min per epoch |
+| B1_s0_smoke1024 | 4f6e686 | 2026-11-16 | valid | 0.2719 | 0.1753 | timing test | Same with cache=ram: 0.96 s per batch (no gain), so image decoding is not the limit. mAP differs because of a different preprocessing path |
+| B0_s0_smoke1024 | 4f6e686 | 2026-11-16 | valid | 0.1801 | 0.1173 | timing test | Parallel test, GPU 0, running together with B1: 1.11 s per batch; est. 16.5 + 2.4 min per epoch; peak 10.0 GB |
+| B1_s0_smoke1024 | 4f6e686 | 2026-11-16 | valid | 0.2434 | 0.1648 | timing test | Parallel test, GPU 1, running together with B0: 1.17 s per batch; est. 17.4 + 3.0 min per epoch; peak 10.8 GB |
 
 Timing-test mAP after one epoch on 10% of the data says nothing about the final accuracy of either image size.
 

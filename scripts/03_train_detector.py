@@ -12,8 +12,14 @@ The same, with the images held in memory (measures training speed without image 
 Full run:
     python scripts/03_train_detector.py --config configs/B1.yaml --seed 0
 
-Continue a run that was cut off:
-    python scripts/03_train_detector.py --config configs/B1.yaml --seed 0 --resume <path to last.pt>
+Background training on Kaggle (one command for every version of the notebook):
+    python scripts/03_train_detector.py --config configs/B1.yaml --seed 0 --device 0 --auto-resume
+  Version 1 starts the run. It stops cleanly before the time budget (train.max_hours) and keeps
+  weights/resume.pt. Later versions, with the previous output attached as input, find the run
+  folder under /kaggle/input, copy it and continue. A finished run is not trained again.
+
+Continue a run by hand:
+    python scripts/03_train_detector.py --config configs/B1.yaml --seed 0 --resume <path to resume.pt>
 
 One run uses one GPU (--device). Outputs go to <out_dir>/<run name>/.
 Before training, every image and label the run needs is read once in parallel (skip with --no-warm),
@@ -27,9 +33,12 @@ import copy
 import csv
 import io
 import json
+import shutil
 import sys
 import time
 from pathlib import Path
+
+T_START = time.time()  # the time budget counts from here
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -47,7 +56,12 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--check", action="store_true", help="check the SCC swap and exit")
     ap.add_argument("--smoke", action="store_true", help="1 epoch on a fraction of the training images")
     ap.add_argument("--fraction", type=float, default=0.1, help="share of training images in a smoke run")
-    ap.add_argument("--resume", default=None, help="path to last.pt of the run to continue")
+    ap.add_argument("--resume", default=None, help="path to resume.pt (or last.pt) of the run to continue")
+    ap.add_argument("--auto-resume", action="store_true",
+                    help="continue the run found under --resume-search, or start it if none is found")
+    ap.add_argument("--resume-search", default="/kaggle/input", help="where earlier outputs are attached")
+    ap.add_argument("--max-hours", type=float, default=None, help="time budget; default train.max_hours")
+    ap.add_argument("--reserve-min", type=float, default=None, help="minutes kept for the final evaluation")
     ap.add_argument("--test", action="store_true", help="also evaluate on the test split (final runs only)")
     ap.add_argument("--cache", choices=["ram"], default=None, help="keep resized images in memory (Ultralytics cache)")
     ap.add_argument("--no-warm", action="store_true", help="skip reading the files into memory before training")
@@ -148,6 +162,26 @@ def main() -> int:
     imgsz = args.imgsz or train_cfg.get("imgsz")
     if not imgsz:
         raise SystemExit("image size is not set: pass --imgsz or set train.imgsz in the config")
+    name = utils.run_name(cfg, args.seed) + (f"_smoke{imgsz}" if args.smoke else "")
+
+    if args.auto_resume and not args.resume and not args.smoke:
+        from vgra import runs
+
+        prev = runs.find_previous_run(name, args.resume_search)
+        if prev is None:
+            print(f"auto-resume: no earlier run called {name} under {args.resume_search}; starting a new run")
+        else:
+            dst = runs.restore_run(prev, out_root / name)
+            print(f"auto-resume: found {prev} ({runs.results_rows(dst)} epochs logged), copied to {dst}")
+            if runs.is_finished(dst):
+                v = runs.read_metrics(dst).get("valid", {})
+                print(f"auto-resume: {name} has already finished (valid mAP50 {v.get('map50')}, "
+                      f"mAP50-95 {v.get('map50_95')}). Nothing to train.")
+                return 0
+            ckpt = dst / "weights" / "resume.pt"
+            if not ckpt.is_file():
+                raise SystemExit(f"auto-resume: {dst} has no weights/resume.pt to continue from")
+            args.resume = str(ckpt)
     train_set = train_cfg.get("train_set", "orig")
     index = pairs.read_index(ix.locate_index(data, args.index))
     data_yaml = lists.write_data_files(index, data, out_root / "lists", train_set)
@@ -168,7 +202,6 @@ def main() -> int:
     from vgra.model import count_parameters, make_trainer
     from vgra.scc import scc_strengths
 
-    name = utils.run_name(cfg, args.seed) + (f"_smoke{imgsz}" if args.smoke else "")
     run_dir = out_root / name
     if args.resume:
         overrides = {"resume": args.resume, "device": args.device}
@@ -189,8 +222,22 @@ def main() -> int:
     clock = {"train": [], "val": []}
     strength_csv = run_dir / "scc_strength.csv"
 
+    from vgra.runs import TimeBudget
+
+    max_hours = args.max_hours if args.max_hours is not None else (None if args.smoke else train_cfg.get("max_hours"))
+    reserve = args.reserve_min if args.reserve_min is not None else train_cfg.get("reserve_minutes", 20)
+    budget = TimeBudget(max_hours, reserve, start=T_START) if max_hours else None
+    if budget:
+        print(f"time budget: {max_hours} h from the start of this script; the run stops cleanly after the "
+              f"last epoch that fits (reserve {reserve} min) and can be continued with --auto-resume")
+
+    def on_model_save(t):
+        # last.pt is stripped of its optimizer when training ends; keep a full copy to continue from
+        shutil.copy2(t.last, t.wdir / "resume.pt")
+
     def on_train_start(t):
         clock["setup"] = time.time() - clock["t0"]
+        clock["mark"] = time.time()
 
     def on_train_epoch_start(t):
         clock["t_train"] = time.time()
@@ -206,6 +253,16 @@ def main() -> int:
             clock["val"].append(time.time() - clock["t_val"])
 
     def on_fit_epoch_end(t):
+        now = time.time()
+        if budget and not t.stop:
+            epoch_s = now - clock.get("mark", now)
+            clock["mark"] = now
+            if budget.should_stop(epoch_s, now):
+                t.stop = True
+                clock["time_stop"] = True
+                print(f"\ntime budget: stopping after epoch {t.epoch + 1} "
+                      f"({budget.elapsed(now) / 3600:.2f} h used, last epoch {epoch_s / 60:.1f} min). "
+                      f"Continue in the next version with --auto-resume.")
         model = t.ema.ema if getattr(t, "ema", None) else t.model
         s = scc_strengths(model)
         if s and t.epoch not in clock.setdefault("logged", set()):  # Ultralytics fires this twice at the end
@@ -217,7 +274,7 @@ def main() -> int:
                     w.writerow(["epoch"] + list(s))
                 w.writerow([t.epoch + 1] + [round(v, 6) for v in s.values()])
 
-    for event, fn in (("on_train_start", on_train_start),
+    for event, fn in (("on_train_start", on_train_start), ("on_model_save", on_model_save),
                       ("on_train_epoch_start", on_train_epoch_start), ("on_train_epoch_end", on_train_epoch_end),
                       ("on_val_start", on_val_start), ("on_val_end", on_val_end), ("on_fit_epoch_end", on_fit_epoch_end)):
         trainer.add_callback(event, fn)
@@ -233,8 +290,12 @@ def main() -> int:
     device = str(args.device)
     results_csv = run_dir / "results.csv"
     epochs_total = max(len(results_csv.read_text().strip().splitlines()) - 1, 0) if results_csv.exists() else 0
+    finished = not clock.get("time_stop", False)
+    if finished and not args.smoke:
+        (run_dir / "weights" / "resume.pt").unlink(missing_ok=True)  # not needed once the run is complete
     metrics = {
         "run_name": name, "exp_id": cfg["exp_id"], "seed": int(args.seed), "commit": utils.git_commit(),
+        "finished": finished, "stopped_for_time": not finished, "max_hours": max_hours,
         "scc": use_scc, "imgsz": int(trainer.args.imgsz), "train_set": train_set,
         "epochs_this_session": len(clock["train"]), "epochs_total": epochs_total, "total_seconds": round(total_s),
         "setup_seconds": round(clock.get("setup", 0.0)), "cache": str(trainer.args.cache),
@@ -264,6 +325,8 @@ def main() -> int:
     if metrics["scc_strength"]:
         print("SCC strength tanh(alpha):", {k: f"{s:+.6f}" for k, s in metrics["scc_strength"].items()})
     print(f"wrote {run_dir / 'metrics.json'}")
+    print(f"RUN STATUS: {'FINISHED' if finished else 'STOPPED FOR TIME'} after {epochs_total} epochs "
+          f"(this session {len(clock['train'])})")
 
     if args.smoke:
         import torch

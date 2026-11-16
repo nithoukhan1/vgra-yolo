@@ -124,20 +124,39 @@ def set_seed(seed: int) -> None:
 
 
 def write_run_info(run_dir: str | Path, cfg: dict, seed: int) -> Path:
-    """Write run_info.json into the run folder. A run without it does not count."""
+    """Write run_info.json into the run folder. A run without it does not count.
+
+    A run that continues in a later session keeps the first session's record and gets one
+    more entry under "sessions". A warning is printed if the code commit has changed.
+    """
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
-    info = {
-        "run_name": run_name(cfg, seed),
-        "exp_id": cfg["exp_id"],
-        "seed": int(seed),
+    out = run_dir / "run_info.json"
+    session = {
         "commit": git_commit(),
         "uncommitted_changes": git_is_dirty(),
         "started_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "versions": library_versions(),
-        "config": cfg,
     }
-    out = run_dir / "run_info.json"
+    if out.is_file():
+        with open(out, encoding="utf-8") as f:
+            info = json.load(f)
+        info.setdefault("sessions", []).append(session)
+        if session["commit"] != info.get("commit"):
+            print(f"WARNING: this session runs commit {session['commit']}, "
+                  f"but the run started with commit {info.get('commit')}")
+    else:
+        info = {
+            "run_name": run_name(cfg, seed),
+            "exp_id": cfg["exp_id"],
+            "seed": int(seed),
+            "commit": session["commit"],
+            "uncommitted_changes": session["uncommitted_changes"],
+            "started_utc": session["started_utc"],
+            "versions": session["versions"],
+            "config": cfg,
+            "sessions": [session],
+        }
     with open(out, "w", encoding="utf-8") as f:
         json.dump(info, f, indent=2)
     return out
