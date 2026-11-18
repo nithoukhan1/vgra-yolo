@@ -1,0 +1,49 @@
+# YOLOv8s + ResCBAM (Ju et al., YOLOv8-AM): layout copied from
+# https://github.com/RuiyangJu/Fracture_Detection_Improved_YOLOv8 , ultralytics/cfg/models/v8/yolov8_ResBlock_CBAM.yaml
+# (their Ultralytics 8.0.147 fork). Backbone and neck are stock YOLOv8; one ResBlock_CBAM follows each neck C2f.
+#
+# Only the s scale is defined. ResBlock_CBAM is not an Ultralytics module, so the parser does not scale its
+# channel argument: the numbers below are the s-scale channels (width 0.50) of the C2f layer before each block
+# (512 -> 256, 256 -> 128, 512 -> 256, 1024 -> 512), i.e. what Ju et al.'s parser computes for the s scale.
+# The block is registered by vgra.rescbam.register() before this file is parsed.
+
+nc: 9
+scales:
+  # [depth, width, max_channels]
+  s: [0.33, 0.50, 1024]
+
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [64, 3, 2]]  # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]]  # 1-P2/4
+  - [-1, 3, C2f, [128, True]]
+  - [-1, 1, Conv, [256, 3, 2]]  # 3-P3/8
+  - [-1, 6, C2f, [256, True]]
+  - [-1, 1, Conv, [512, 3, 2]]  # 5-P4/16
+  - [-1, 6, C2f, [512, True]]
+  - [-1, 1, Conv, [1024, 3, 2]]  # 7-P5/32
+  - [-1, 3, C2f, [1024, True]]
+  - [-1, 1, SPPF, [1024, 5]]  # 9
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 10
+  - [[-1, 6], 1, Concat, [1]]  # 11 cat backbone P4
+  - [-1, 3, C2f, [512]]  # 12
+  - [-1, 1, ResBlock_CBAM, [256]]  # 13
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 14
+  - [[-1, 4], 1, Concat, [1]]  # 15 cat backbone P3
+  - [-1, 3, C2f, [256]]  # 16
+  - [-1, 1, ResBlock_CBAM, [128]]  # 17 (P3/8-small)
+
+  - [-1, 1, Conv, [256, 3, 2]]  # 18
+  - [[-1, 12], 1, Concat, [1]]  # 19 cat head P4 (C2f output before the block, as in Ju et al.)
+  - [-1, 3, C2f, [512]]  # 20
+  - [-1, 1, ResBlock_CBAM, [256]]  # 21 (P4/16-medium)
+
+  - [-1, 1, Conv, [512, 3, 2]]  # 22
+  - [[-1, 9], 1, Concat, [1]]  # 23 cat head P5
+  - [-1, 3, C2f, [1024]]  # 24
+  - [-1, 1, ResBlock_CBAM, [512]]  # 25 (P5/32-large)
+
+  - [[17, 21, 25], 1, Detect, [nc]]  # 26 Detect(P3, P4, P5)

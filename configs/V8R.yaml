@@ -1,0 +1,8 @@
+# V8R: YOLOv8s + ResCBAM (Ju et al.'s best attention module, YOLOv8-AM), single view, same recipe as V8.
+# Robustness detector for the paired-projection analysis (protocol v1.1, section 10). V8R vs V8 isolates the
+# module: same pretrained YOLOv8s weights in every shared layer, same data, seeds and settings.
+model:
+  weights: yolov8s.pt
+  scc: false
+  rescbam: true
+  vgra: "off"

@@ -18,6 +18,8 @@ per account; please do not share your login). Nothing in the code needs editing.
 3. In the first code cell, check `REF` and `RUNS`:
    - Notebook A: `REF = "detectors-v2"`, `RUNS = [("configs/B0.yaml", 1, 0), ("configs/B0.yaml", 2, 1)]`
    - Notebook B: `REF = "detectors-v2"`, `RUNS = [("configs/V8.yaml", 0, 0), ("configs/V8.yaml", 1, 1)]`
+   - Notebook C: `REF = "detectors-v3"`, `RUNS = [("configs/V8R.yaml", 0, 0), ("configs/V8R.yaml", 1, 1)]`
+     (YOLOv8s + ResCBAM; output dataset name for example `vgra-v8r-s0-s1`)
 4. **Save Version -> Save & Run All (Commit)**. It runs in the background for about 11-12 hours; you can
    close the browser.
 5. When it ends, open the version's log and send the project owner the output of the last cell
@@ -32,7 +34,7 @@ per account; please do not share your login). Nothing in the code needs editing.
 4. Repeat until the last cell shows `FINISHED` for both runs (usually 3 versions).
 
 ## At the end
-1. Notebook page -> Output -> **New Dataset** (for example `vgra-b0-s1-s2` or `vgra-v8-s0-s1`).
+1. Notebook page -> Output -> **New Dataset** (for example `vgra-b0-s1-s2`, `vgra-v8-s0-s1` or `vgra-v8r-s0-s1`).
 2. Share the dataset with the project owner (dataset Settings -> Sharing -> add the owner's username),
    or make it public.
 3. Tell the project owner the dataset name.

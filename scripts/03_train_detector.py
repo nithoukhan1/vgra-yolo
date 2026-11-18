@@ -1,4 +1,8 @@
-"""STEP-03: train a single-view detector (B0 = YOLO11s, B1 = YOLO11s + SCC).
+"""STEP-03: train a single-view detector (B0 = YOLO11s, B1 = YOLO11s + SCC, V8 = YOLOv8s,
+V8R = YOLOv8s + ResCBAM of Ju et al.).
+
+Check the ResCBAM model (no training):
+    python scripts/03_train_detector.py --config configs/V8R.yaml --check
 
 Check the SCC swap (no training):
     python scripts/03_train_detector.py --config configs/B1.yaml --check
@@ -53,7 +57,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device", default="0", help="GPU index, or cpu")
     ap.add_argument("--imgsz", type=int, default=None, help="override train.imgsz")
-    ap.add_argument("--check", action="store_true", help="check the SCC swap and exit")
+    ap.add_argument("--check", action="store_true", help="check the SCC swap or the ResCBAM model and exit")
     ap.add_argument("--smoke", action="store_true", help="1 epoch on a fraction of the training images")
     ap.add_argument("--fraction", type=float, default=0.1, help="share of training images in a smoke run")
     ap.add_argument("--resume", default=None, help="path to resume.pt (or last.pt) of the run to continue")
@@ -118,6 +122,52 @@ def check_scc(weights: str, n_classes: int) -> bool:
     return ok_all
 
 
+def check_rescbam(weights: str, n_classes: int) -> bool:
+    """The ResCBAM model has Ju et al.'s layout, gets every shareable pretrained tensor, and saves cleanly."""
+    import torch
+    from ultralytics import YOLO
+
+    from vgra import rescbam
+    from vgra.model import count_parameters
+
+    stock = YOLO(weights).model
+    ours = rescbam.build(n_classes)
+    r = rescbam.transfer_stock_weights(ours, stock)
+    ours.eval()
+    torch.manual_seed(0)
+    x = torch.rand(2, 3, 256, 256)
+    with torch.no_grad():
+        a = ours(x)
+        a = a[0] if isinstance(a, (list, tuple)) else a
+        buf = io.BytesIO()
+        torch.save({"model": ours}, buf)
+        buf.seek(0)
+        again = torch.load(buf, weights_only=False)["model"](x)
+        again = again[0] if isinstance(again, (list, tuple)) else again
+        clone = copy.deepcopy(ours)(x)
+        clone = clone[0] if isinstance(clone, (list, tuple)) else clone
+    # only the class layers of the head differ (80 COCO classes vs ours): stock layer 22 = our layer 26
+    shared_ok = all(k.startswith("model.22.cv3.") for k in r["skipped"]) and \
+        all(k.startswith("model.26.cv3.") for k in r["missing_outside_blocks"])
+    n0, n1 = count_parameters(stock), count_parameters(ours)
+    checks = [
+        ("ResCBAM blocks at layers 13, 17, 21, 25", rescbam.block_indices(ours) == [13, 17, 21, 25], ""),
+        ("detect reads 17, 21, 25; P4 skip reads 12", ours.model[26].f == [17, 21, 25] and ours.model[19].f == [-1, 12], ""),
+        ("pretrained tensors copied", shared_ok,
+         f"{r['transferred']}/{r['stock_tensors']}, not copied: {len(r['skipped'])} class-layer tensors"),
+        ("model saves and reloads", bool(torch.equal(again, a)), ""),
+        ("model deep-copies", bool(torch.equal(clone, a)), ""),
+    ]
+    print(f"weights: {weights}")
+    print(f"parameters: stock YOLOv8s {n0:,} (80 classes) | YOLOv8s + ResCBAM {n1:,} ({n_classes} classes)")
+    ok_all = True
+    for name, ok, detail in checks:
+        ok_all = ok_all and ok
+        print(f"[{'ok' if ok else 'FAIL'}] {name}" + (f" ({detail})" if detail else ""))
+    print("RESCBAM CHECK: PASS" if ok_all else "RESCBAM CHECK: FAIL")
+    return ok_all
+
+
 def summarise(m) -> dict:
     """Overall and per-class numbers from an Ultralytics detection metrics object."""
     box, names = m.box, m.names
@@ -151,9 +201,12 @@ def main() -> int:
     out_root = Path(args.out or cfg["out_dir"])
     weights = args.weights or model_cfg["weights"]
     use_scc = bool(model_cfg["scc"])
-    print(f"repo commit: {utils.git_commit()} | config: {cfg['exp_id']} | scc: {use_scc}")
+    use_rescbam = bool(model_cfg.get("rescbam", False))
+    print(f"repo commit: {utils.git_commit()} | config: {cfg['exp_id']} | scc: {use_scc} | rescbam: {use_rescbam}")
 
     if args.check:
+        if use_rescbam:
+            return 0 if check_rescbam(weights, len(data["classes"])) else 1
         if not use_scc:
             print("this config has scc: false, so there is no swap to check.\nSCC CHECK: PASS")
             return 0
@@ -214,7 +267,7 @@ def main() -> int:
         if args.smoke:
             overrides.update(epochs=1, fraction=float(args.fraction), patience=0)
 
-    trainer = make_trainer(use_scc)(overrides=overrides)
+    trainer = make_trainer(use_scc, rescbam=use_rescbam)(overrides=overrides)
     run_dir = Path(trainer.save_dir)
     info_path = utils.write_run_info(run_dir, cfg, args.seed)
     print(f"run folder: {run_dir} | run info: {info_path.name}")
@@ -296,7 +349,7 @@ def main() -> int:
     metrics = {
         "run_name": name, "exp_id": cfg["exp_id"], "seed": int(args.seed), "commit": utils.git_commit(),
         "finished": finished, "stopped_for_time": not finished, "max_hours": max_hours,
-        "scc": use_scc, "imgsz": int(trainer.args.imgsz), "train_set": train_set,
+        "scc": use_scc, "rescbam": use_rescbam, "imgsz": int(trainer.args.imgsz), "train_set": train_set,
         "epochs_this_session": len(clock["train"]), "epochs_total": epochs_total, "total_seconds": round(total_s),
         "setup_seconds": round(clock.get("setup", 0.0)), "cache": str(trainer.args.cache),
         "train_seconds_per_epoch": round(sum(clock["train"]) / max(len(clock["train"]), 1), 1),

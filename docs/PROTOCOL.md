@@ -1,6 +1,7 @@
-# Analysis protocol (FROZEN v1.0, approved by the project owner on 2026-11-18)
+# Analysis protocol (FROZEN v1.0, approved by the project owner on 2026-11-18; amendment v1.1 on 2026-11-18)
 
-Status: FROZEN. Tag `protocol-v1` marks this version. The test split may be opened only after all
+Status: FROZEN. Tag `protocol-v1` marks v1.0. Amendment v1.1 (owner approval 2026-11-18, before the test
+split was opened) adds one robustness detector, V8R; see section 3, 4.3 item 6 and section 10. The test split may be opened only after all
 models and choices are fixed (section 2). Any later change is logged in section 10 with date and
 reason (deviations are allowed, but always reported).
 
@@ -42,8 +43,15 @@ opening test, it is fixed, the whole test evaluation is rerun, and the event is 
 | B0 | YOLO11s (Ultralytics 8.4.7) | 0, 1, 2 | best epoch on valid (Ultralytics fitness) |
 | B1 | YOLO11s + SCC | 0 | same |
 | V8 | YOLOv8s | 0, 1 | same |
+| V8R | YOLOv8s + ResCBAM (Ju et al., YOLOv8-AM), amendment v1.1 | 0, 1 | same |
 | +PAC | PAC on each detector above (Part B, only if Gate P passes) | as detector | fixed number of epochs set on valid (section 6) |
 Common recipe: imgsz 1024, batch 16, 100 epochs, SGD lr0 0.01, patience 50, Ultralytics defaults.
+V8R: Ju et al.'s ResBlock_CBAM after each of the four neck C2f layers, layout copied from their YAML
+(`configs/models/yolov8s-rescbam.yaml`, `vgra/rescbam.py`); pretrained YOLOv8s weights in every shared
+layer, the four blocks randomly initialised; same recipe and seeds as V8, so V8R vs V8 isolates the module.
+V8R deadline (fixed in advance): if V8R_s0 and V8R_s1 have not both FINISHED within 7 days after the last
+of B0_s1, B0_s2, V8_s0, V8_s1 finishes, the test session goes ahead without V8R and V8R is not reported
+on test.
 
 ## 4. Part A: paired-projection analysis
 
@@ -78,7 +86,10 @@ Common recipe: imgsz 1024, batch 16, 100 epochs, SGD lr0 0.01, patience 50, Ultr
   5. RQ1 confirmatory: the STEP-04 premise test rerun on test pairs with the Gate 2 rule
      (detection-level gain with 95% CI above 0 in >= 2 of the gateable classes AND partner
      rescoring AP50 > view-only rescoring). Expected outcome: no gain.
-  6. Every endpoint repeated for B1_s0 and V8 seeds 0-1 (robustness across detectors).
+  6. Every endpoint repeated for B1_s0, V8 seeds 0-1 and V8R seeds 0-1 (robustness across detectors).
+  7. Module comparison (descriptive, amendment v1.1): V8R vs V8 per seed on the test detector metrics
+     (mAP50, mAP50-95, per-class AP50) and on the primary endpoint; the V8R - V8 difference is shown
+     next to the seed-to-seed difference of V8 (and of B0). No claim of superiority is made from two seeds.
 
 ### 4.4 Subgroups (RQ5), defined in advance
 | Subgroup | Definition |
@@ -154,4 +165,5 @@ the confirmatory numbers are the test-split numbers under this protocol.
 ## 10. Deviations log
 | Date | Change | Reason |
 |---|---|---|
+| 2026-11-18 | Amendment v1.1 (owner approval, before the test split was opened): V8R = YOLOv8s + ResCBAM of Ju et al. (best attention module published on this split), seeds 0 and 1, same recipe as V8, as an extra robustness detector (4.3 item 6) and a descriptive module comparison (4.3 item 7); 7-day deadline rule in section 3. Code tag `detectors-v3` (adds V8R only; B0, B1 and V8 code unchanged) | Answers "would a published attention detector change the conclusion?" and "is a published module gain larger than seed noise?"; decided before any test result |
 | 2026-11-18 | v1.0 frozen; before freezing, section 5 was made explicit (Gate P training and evaluation settings) | Pre-registration completeness; no Gate P result existed |
