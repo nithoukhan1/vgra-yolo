@@ -19,3 +19,8 @@ Rules:
 - A run counts only if its folder has `run_info.json`.
 - Run name = `<expID>_s<seed>`, e.g. `V1_s0`.
 - Per-class numbers live in `results/<run name>/metrics.json`.
+| B1_s0 | 60fc83f | 2026-11-17 | valid | 0.628 | 0.4046 | stopped for time (version 2) | Resumed at epoch 51, reached 91; best epoch still 48 (mild overfitting after about epoch 50; resume verified continuous) |
+| B0_s0 | 60fc83f | 2026-11-17 | valid | 0.627 | 0.4013 | stopped for time (version 2) | Restarted from scratch (download race fixed), epochs 1-49, best epoch 43 |
+| B1_s0 | 60fc83f | 2026-11-17 | valid | 0.628 | 0.4046 | FINISHED (version 3) | 100 epochs; best epoch 48 |
+| B0_s0 | 60fc83f | 2026-11-18 | valid | 0.627 | 0.4013 | FINISHED (version 4) | 99 epochs in version 3, epoch 100 in version 4; best epoch 43 |
+| premise B1_s0, B0_s0 | f7a7eb4 | 2026-11-18 | valid pairs | 0.635 / 0.618 | - | GATE 2 FAIL | Premise test (STEP-04): 0 of 6 gateable classes with a partner gain (rule needs 2). Mean AP50 on validation pairs (square letterbox) shown. Follow-up analysis and study-level result: claude/VGRA_gate2_report.md (project docs) |

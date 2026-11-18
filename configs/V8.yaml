@@ -1,0 +1,6 @@
+# V8: stock YOLOv8s, single view. Same recipe as B0; the detector family Ju et al. used
+# (literature comparability) and a second architecture for the paired-projection analysis.
+model:
+  weights: yolov8s.pt
+  scc: false
+  vgra: "off"
