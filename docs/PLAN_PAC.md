@@ -1,16 +1,16 @@
 # Plan: combined paper (Part A analysis + Part B PAC), phases and steps
 
 Full design: project doc `claude/PAC_PLAN.md`. Rules: `docs/PROTOCOL.md`. Decisions: `docs/DECISIONS.md`.
-Tick a step only when its pass check is met. `[ ]` open, `[x]` done, `[-]` dropped.
+Tick a step only when its pass check is met. `[ ]` open, `[~]` running, `[x]` done, `[-]` dropped.
 
 ## Phase 0: setup and protocol (local, no GPU)
-- [ ] P0.1 Apply the phase-0 patch: V8 config, notebook v2, protocol draft, this plan. Merge, tag `detectors-v2`.
-- [ ] P0.2 Review `docs/PROTOCOL.md`; owner approves; status FROZEN; tag `protocol-v1`.
+- [x] P0.1 Apply the phase-0 patch: V8 config, notebook v2, protocol draft, this plan. Merge, tag `detectors-v2`.
+- [x] P0.2 Review `docs/PROTOCOL.md`; owner approves; status FROZEN; tag `protocol-v1` (2026-11-18).
       Pass check: tag exists; test split not yet opened.
 
 ## Phase 1: background detector training (co-author accounts, GPU)
-- [ ] P1.1 Notebook A (account owner runs it): B0 seeds 1 and 2. About 3 versions.
-- [ ] P1.2 Notebook B (account owner runs it): V8 seeds 0 and 1 (one per GPU). About 3 versions.
+- [~] P1.1 Notebook A (account owner runs it): B0 seeds 1 and 2. About 3 versions.
+- [~] P1.2 Notebook B (account owner runs it): V8 seeds 0 and 1 (one per GPU). About 3 versions.
 - [ ] P1.3 Guide for account owners: `docs/COAUTHOR_RUNS.md`. Each finished output saved as a dataset and shared with the project owner.
       Pass check: every run FINISHED; rows in `docs/EXPERIMENTS.md`.
 

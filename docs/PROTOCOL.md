@@ -1,8 +1,12 @@
-# Analysis protocol (DRAFT v0.1, 2026-11-18)
+# Analysis protocol (FROZEN v1.0, approved by the project owner on 2026-11-18)
 
-Status: DRAFT for review. When the project owner approves it, the status becomes FROZEN, the
-commit is tagged `protocol-v1`, and only then may the test split be opened. Any later change is
-logged in section 10 with date and reason (deviations are allowed, but always reported).
+Status: FROZEN. Tag `protocol-v1` marks this version. The test split may be opened only after all
+models and choices are fixed (section 2). Any later change is logged in section 10 with date and
+reason (deviations are allowed, but always reported).
+
+Owner decisions at freezing (2026-11-18): Part A primary measure = sensitivity at 95% specificity;
+Gate P = at least 2 of 3 target classes; PAC non-inferiority margin = 0.005 mAP50; subgroups = the
+four listed in 4.4.
 
 Purpose: fix every endpoint, threshold, model-selection rule, subgroup and statistical test
 **before** results on the test split are seen, so that the paper's claims cannot be shaped by
@@ -87,18 +91,31 @@ Subgroup results are reported as estimates with 95% CI; no subgroup claim is mad
 that excludes no effect, and subgroup tests are labelled exploratory.
 
 ## 5. Part B gate: Gate P (decided on valid only)
-- Model: presence branch (class-query pooling over P3/P4/P5 + projection embedding + per-class
-  presence scorer) trained on the frozen B0_s0 detector, train split originals, mosaic off.
-  Training length and loss are fixed in the Gate P script before it is run on valid.
-- Evaluation on valid pairs and images with the STEP-04 machinery (patient-grouped 5-fold
-  cross-fitting, 500 patient bootstraps):
+All settings below were fixed before Gate P was run.
+- Detector: B0_s0 `best.pt`, frozen (eval mode, no gradients).
+- Presence branch: class-query pooling over the detector's P3/P4/P5 neck outputs (width 64, one
+  learned query per class for all 9 classes, one cross-attention layer + feed-forward), a
+  projection embedding (PA / LAT / other) added to the queries, and a per-class linear presence
+  scorer (`vgra/presence.py`).
+- Training: train split originals (14,204 images), image size 1024, batch 16, Ultralytics default
+  augmentation with mosaic, mixup, cutmix and copy-paste off; presence target of class c = at least
+  one box of c in the augmented image; loss = binary cross-entropy with per-class positive weight
+  min(negatives / positives, 50) counted on the train split; AdamW, learning rate 1e-3, weight
+  decay 1e-4, 200 warm-up iterations then cosine decay to 0; 5 epochs; seed 0; the weights after
+  the last epoch are used (no selection on valid).
+- Evaluation: all valid images (paired and unpaired), square letterbox 1024, detector NMS as
+  Ultralytics validation (conf 0.001, IoU 0.7, max 300, multi-label). Patient-grouped 5-fold
+  cross-fitting and 500 patient bootstraps (the STEP-04 machinery):
   - detection level, target = true positive at IoU 0.5:
-    base [logit conf, view, logit own image max of c] vs base + [logit p_c, view x logit p_c];
-  - rescored AP50 from the out-of-fold probabilities of both models.
+    base [logit conf, LAT indicator, other indicator, logit own-image max of c]
+    vs new = base + [logit p_c, LAT indicator x logit p_c];
+  - rescored AP50 per class from the out-of-fold probabilities of both models; classes with fewer
+    than 10 true positives keep the detector confidence in both models;
+  - image level (reported, not part of the rule): AUC of own-image max vs + presence.
 - Target classes: pronatorsign, softtissue, periostealreaction.
-- **PASS** if at least 2 of the 3 target classes have a detection-level rescored AP50 gain whose
-  95% patient-bootstrap CI lies above 0, AND the mean AP50 over all classes with labels is not
-  lower than the base. Otherwise **FAIL**: Part B is dropped and Part A is published alone.
+- **PASS** if at least 2 of the 3 target classes have a rescored AP50 gain (new - base) whose 95%
+  patient-bootstrap CI lies above 0, AND the mean rescored AP50 over all classes with labels is not
+  lower for new than for base. Otherwise **FAIL**: Part B is dropped and Part A is published alone.
 
 ## 6. Part B: PAC evaluation (only if Gate P passes)
 - PAC: calibrated class logit l' = l + alpha_c * log sigmoid(z_c), alpha_c = cap * tanh(theta_c),
@@ -137,4 +154,4 @@ the confirmatory numbers are the test-split numbers under this protocol.
 ## 10. Deviations log
 | Date | Change | Reason |
 |---|---|---|
-| | | |
+| 2026-11-18 | v1.0 frozen; before freezing, section 5 was made explicit (Gate P training and evaluation settings) | Pre-registration completeness; no Gate P result existed |
