@@ -21,7 +21,7 @@ Tick a step only when its pass check is met. `[ ]` open, `[~]` running, `[x]` do
       Pass check: unit tests (known AUC / DeLong / McNemar values); valid numbers reproduce the pilot.
 
 ## Phase 3: Gate P (valid only, decision D1)
-- [ ] P3.1 S3 presence branch + trainer (frozen detector, mosaic off, projection embedding) + evaluation script.
+- [x] P3.1 S3 presence branch + trainer (frozen detector, mosaic off, projection embedding) + evaluation script (`vgra/presence.py`, `vgra/gate_p.py`, `vgra/infer.py`, `scripts/20_gate_p.py`; tag `gate-p-v1`).
       Pass check: tests; identity checks; smoke run.
 - [ ] P3.2 Run Gate P on B0_s0 (1-2 GPU-h).
 - [ ] P3.3 D1: PASS -> Phases 4-5; FAIL -> skip to Phase 6 with Part A only.
