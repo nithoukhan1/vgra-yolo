@@ -23,18 +23,18 @@ Tick a step only when its pass check is met. `[ ]` open, `[~]` running, `[x]` do
 ## Phase 3: Gate P (valid only, decision D1)
 - [x] P3.1 S3 presence branch + trainer (frozen detector, mosaic off, projection embedding) + evaluation script (`vgra/presence.py`, `vgra/gate_p.py`, `vgra/infer.py`, `scripts/20_gate_p.py`; tag `gate-p-v1`).
       Pass check: tests; identity checks; smoke run.
-- [ ] P3.2 Run Gate P on B0_s0 (1-2 GPU-h).
-- [ ] P3.3 D1: PASS -> Phases 4-5; FAIL -> skip to Phase 6 with Part A only.
+- [x] P3.2 Run Gate P on B0_s0 (2026-11-18, a40d1a1, 33 min): **GATE P: FAIL** (0 of 3 target classes; mean rescored AP50 base 0.5934, new 0.5935).
+- [x] P3.3 D1 = FAIL -> Part B dropped (protocol section 5); Phases 4-5 not run; continue with Part A (Phase 2 S2, then Phase 6).
 
-## Phase 4: PAC (only if D1 = PASS)
-- [ ] P4.1 S4 `PresenceDetect` head. Pass check: identical to the detector at start; checkpoint / EMA round trip.
-- [ ] P4.2 S5 stage-2 trainer (resumable). Pass check: smoke run; detector weights unchanged (hash).
-- [ ] P4.3 Choose epochs / loss / lambda on valid (B0_s0); fix them in the protocol deviations log if needed.
-- [ ] P4.4 Main runs: PAC on B0_s0, s1, s2, B1_s0, V8_s0, V8_s1.
+## Phase 4: PAC (only if D1 = PASS) — DROPPED (Gate P FAIL, 2026-11-18)
+- [-] P4.1 S4 `PresenceDetect` head. Pass check: identical to the detector at start; checkpoint / EMA round trip.
+- [-] P4.2 S5 stage-2 trainer (resumable). Pass check: smoke run; detector weights unchanged (hash).
+- [-] P4.3 Choose epochs / loss / lambda on valid (B0_s0); fix them in the protocol deviations log if needed.
+- [-] P4.4 Main runs: PAC on B0_s0, s1, s2, B1_s0, V8_s0, V8_s1.
 
-## Phase 5: controls and ablations (only if D1 = PASS)
-- [ ] P5.1 Controls: separate image classifier gate; joint aux-loss only; per-class recalibration.
-- [ ] P5.2 Ablations (B0_s0, one change each).
+## Phase 5: controls and ablations (only if D1 = PASS) — DROPPED (Gate P FAIL, 2026-11-18)
+- [-] P5.1 Controls: separate image classifier gate; joint aux-loss only; per-class recalibration.
+- [-] P5.2 Ablations (B0_s0, one change each).
 
 ## Phase 6: one-time test evaluation
 - [ ] P6.1 All models and choices fixed; protocol FROZEN.
