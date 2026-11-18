@@ -17,6 +17,11 @@ Ends with 'GATE 2: PASS' or 'GATE 2: FAIL' for the first run (B1 by default).
 Gate 2 rule (fixed before any result was seen, docs/DECISIONS.md): PASS if at least 2 gateable
 classes have a detection-level gain whose 95% interval lies above 0 and whose partner rescoring
 raises AP50 over the view-only rescoring.
+
+I3, RQ1 confirmatory (docs/PROTOCOL.md 4.3 item 5): the same test and rule on the test pairs, for every
+detector, with 2,000 bootstrap resamples (protocol section 7). Needs --open-test:
+    python scripts/04_premise_test.py --runs B0_s0 B0_s1 B0_s2 B1_s0 V8_s0 V8_s1 --split test --open-test
+Writes to <out_dir>/premise_test/ and ends with 'RQ1 (test): ...' per run instead of a gate decision.
 """
 
 from __future__ import annotations
@@ -36,14 +41,16 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--runs", nargs="+", default=["B1_s0"], help="run names searched under --search")
     ap.add_argument("--weights", nargs="+", default=None, help="explicit .pt files instead of --runs (same order)")
     ap.add_argument("--search", default="/kaggle/input")
-    ap.add_argument("--split", default="valid", choices=["valid"], help="the gate is decided on validation only")
+    ap.add_argument("--split", default="valid", choices=["valid", "test"],
+                    help="valid = Gate 2 (decided there); test = RQ1 confirmatory, needs --open-test")
+    ap.add_argument("--open-test", action="store_true", help="required to run on the test split")
     ap.add_argument("--imgsz", type=int, default=None)
     ap.add_argument("--pairs", type=int, default=8, help="pairs per batch")
     ap.add_argument("--conf", type=float, default=0.001)
     ap.add_argument("--iou", type=float, default=0.7)
     ap.add_argument("--max-det", type=int, default=300)
     ap.add_argument("--folds", type=int, default=5)
-    ap.add_argument("--boot", type=int, default=500)
+    ap.add_argument("--boot", type=int, default=None, help="default 500 on valid (Gate 2), 2000 on test (protocol 7)")
     ap.add_argument("--limit", type=int, default=0, help="only the first N pairs (smoke test)")
     ap.add_argument("--device", default=None)
     ap.add_argument("--workers", type=int, default=2)
@@ -156,10 +163,18 @@ def gate(rows) -> tuple[bool, list]:
 
 def main() -> int:
     args = parse_args()
+    if args.split == "test" and not args.open_test:
+        raise SystemExit("the test split is opened once, at the end (protocol section 2); add --open-test then")
+    if args.boot is None:
+        args.boot = 2000 if args.split == "test" else 500
+    import json
+    from datetime import datetime, timezone
+
     import pandas as pd
     import torch
     from ultralytics.nn.tasks import load_checkpoint
 
+    import vgra.rescbam  # noqa: F401  (ResBlockCBAM must be importable to load V8R)
     import vgra.scc  # noqa: F401  (C3K2_SCC must be importable to load B1)
     from vgra import data as vd
     from vgra import index as ix
@@ -175,9 +190,17 @@ def main() -> int:
     gate_idx = vm.gate_indices(cfg)
     imgsz = int(args.imgsz or cfg["train"]["imgsz"])
     dev = torch.device(args.device or ("cuda:0" if torch.cuda.is_available() else "cpu"))
-    out = Path(args.out or cfg["out_dir"]) / "premise"
+    out = Path(args.out or cfg["out_dir"]) / ("premise" if args.split == "valid" else "premise_test")
     out.mkdir(parents=True, exist_ok=True)
-    print(f"repo commit: {utils.git_commit()} | split {args.split} | image size {imgsz} | device {dev}")
+    print(f"repo commit: {utils.git_commit()} | split {args.split} | image size {imgsz} | device {dev} | "
+          f"bootstrap {args.boot}")
+    if args.split == "test":
+        record = {"opened_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                  "commit": utils.git_commit(), "script": "04_premise_test.py",
+                  "runs": [Path(w).parent.parent.name for w in args.weights] if args.weights else args.runs,
+                  "smoke": bool(args.limit) or imgsz != int(cfg["train"]["imgsz"])}
+        (out / "TEST_OPENED.json").write_text(json.dumps(record, indent=2))
+        print(f"TEST SPLIT OPENED: {record}")
 
     index = pr.read_index(ix.locate_index(data, args.index))
     pairs = pr.build_pairs(index, classes)
@@ -220,6 +243,9 @@ def main() -> int:
               f"(validation pairs only, square letterbox; should be close to the run's validation mAP50)")
         ok, good = gate(rows)
         print(f"{run}: gateable classes with a clear partner gain: {', '.join(good) or 'none'}")
+        if args.split == "test":
+            print(f"RQ1 (test), {run}: partner gain in {len(good)} gateable classes (Gate 2 rule needs {MIN_CLASSES}) "
+                  f"-> {'partner HELPS box detection' if ok else 'no partner gain (as expected from Gate 2)'}")
         if verdict is None:
             verdict = (run, ok, good)
         del model
@@ -232,8 +258,11 @@ def main() -> int:
     pd.DataFrame(all_rows).reindex(columns=cols).to_csv(out / "premise.csv", index=False)
     print(f"\n[info] tables: {out}")
     run, ok, good = verdict
-    print(f"GATE 2: {'PASS' if ok else 'FAIL'} ({run}: {len(good)} gateable classes with a clear gain; "
-          f"rule needs {MIN_CLASSES})")
+    if args.split == "valid":
+        print(f"GATE 2: {'PASS' if ok else 'FAIL'} ({run}: {len(good)} gateable classes with a clear gain; "
+              f"rule needs {MIN_CLASSES})")
+    else:
+        print("RQ1 CONFIRMATORY DONE (test pairs): see the per-run lines above")
     return 0
 
 

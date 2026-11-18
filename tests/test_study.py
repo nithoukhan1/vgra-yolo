@@ -1,5 +1,6 @@
 """I1/I2 tests: patient-level analysis (vgra/study.py), its script, and the test-split guard of 10_predict."""
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -12,6 +13,9 @@ from vgra import premise as pm
 from vgra import study as st
 
 REPO = Path(__file__).resolve().parents[1]
+# Scripts print Unicode (Ultralytics uses emoji); read it as UTF-8 on every platform (Windows: cp1252 otherwise)
+RUN = {"capture_output": True, "text": True, "encoding": "utf-8", "errors": "replace", "cwd": REPO,
+       "env": {**os.environ, "PYTHONIOENCODING": "utf-8"}}
 CLASSES = ["boneanomaly", "bonelesion", "foreignbody", "fracture", "metal",
            "periostealreaction", "pronatorsign", "softtissue", "text"]
 
@@ -224,8 +228,7 @@ def test_study_script_end_to_end(tmp_path):
             (pred / run).mkdir(exist_ok=True)
             imgs.to_csv(pred / run / f"{split}_images.csv.gz", index=False)
     r = subprocess.run([sys.executable, str(REPO / "scripts" / "12_study_level.py"), "--pred", str(pred),
-                        "--runs", "B0_s0", "B0_s1", "--eval", "test", "--boot", "50"],
-                       capture_output=True, text=True, cwd=REPO)
+                        "--runs", "B0_s0", "B0_s1", "--eval", "test", "--boot", "50"], **RUN)
     assert r.returncode == 0, r.stderr[-2000:]
     assert "CONFIRMATORY" in r.stdout and "STUDY-LEVEL DONE" in r.stdout
     out = pred / "study_test"
@@ -235,14 +238,16 @@ def test_study_script_end_to_end(tmp_path):
     assert seeds.loc[(seeds["finding"] == "fracture") & (seeds["contrast"] == "max_vs_pa"), "seeds"].iloc[0] == 2
 
 
-def test_predict_refuses_test_without_flag():
-    r = subprocess.run([sys.executable, str(REPO / "scripts" / "10_predict.py"), "--runs", "B0_s0", "--split", "test"],
-                       capture_output=True, text=True, cwd=REPO)
-    assert r.returncode != 0 and "opened once" in (r.stdout + r.stderr)
+def test_scripts_refuse_test_without_flag():
+    for script, extra in (("10_predict.py", ["--runs", "B0_s0"]), ("11_val_detectors.py", ["--runs", "B0_s0"]),
+                          ("04_premise_test.py", [])):
+        r = subprocess.run([sys.executable, str(REPO / "scripts" / script), *extra, "--split", "test"], **RUN)
+        assert r.returncode != 0 and "opened once" in (r.stdout + r.stderr), script
 
 
-def test_predict_script_on_tiny_data(tmp_path):
-    """I1 end to end: tiny dataset, index, an untrained detector checkpoint, predictions on valid."""
+def test_eval_scripts_on_tiny_data(tmp_path):
+    """I1, I3, I4 end to end: tiny dataset, index, an untrained detector checkpoint; I1 on valid,
+    I3 and I4 on the (tiny) test split with --open-test."""
     torch = pytest.importorskip("torch")
     pytest.importorskip("ultralytics")
     sys.path.insert(0, str(REPO / "tests"))
@@ -259,7 +264,7 @@ def test_predict_script_on_tiny_data(tmp_path):
     r = subprocess.run([sys.executable, str(REPO / "scripts" / "10_predict.py"), "--runs", "T_s0", "--weights",
                         str(tmp_path / "w.pt"), "--split", "valid", "--root", str(root), "--index",
                         str(tmp_path / "index.csv"), "--imgsz", "64", "--device", "cpu", "--no-warm",
-                        "--out", str(tmp_path / "out")], capture_output=True, text=True, cwd=REPO)
+                        "--out", str(tmp_path / "out")], **RUN)
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
     pred = tmp_path / "out" / "predictions"
     pairs = pd.read_csv(pred / "pairs_valid.csv")
@@ -270,3 +275,17 @@ def test_predict_script_on_tiny_data(tmp_path):
     assert {"tp50", "tp95"} <= set(dets.columns)
     assert '"smoke": true' in (pred / "T_s0" / "valid_info.json").read_text()
     st.study_table(imgs, pairs, CLASSES)  # the analysis accepts what the runner wrote
+    common = ["--root", str(root), "--index", str(tmp_path / "index.csv"), "--imgsz", "64", "--device", "cpu",
+              "--out", str(tmp_path / "out")]
+    w = tmp_path / "runs" / "T_s0" / "weights"
+    w.mkdir(parents=True)
+    (tmp_path / "w.pt").rename(w / "best.pt")
+    r = subprocess.run([sys.executable, str(REPO / "scripts" / "04_premise_test.py"), "--weights", str(w / "best.pt"),
+                        "--split", "test", "--open-test", "--boot", "20", *common], **RUN)
+    assert r.returncode == 0 and "RQ1 CONFIRMATORY DONE" in r.stdout, r.stdout[-2000:] + r.stderr[-2000:]
+    assert (tmp_path / "out" / "premise_test" / "TEST_OPENED.json").is_file()
+    r = subprocess.run([sys.executable, str(REPO / "scripts" / "11_val_detectors.py"), "--runs", "T_s0", "--weights",
+                        str(w / "best.pt"), "--split", "test", "--open-test", *common], **RUN)
+    assert r.returncode == 0 and "DETECTOR VALIDATION DONE" in r.stdout, r.stdout[-2000:] + r.stderr[-2000:]
+    det = pd.read_csv(tmp_path / "out" / "detectors_test" / "detectors.csv")
+    assert list(det["run"]) == ["T_s0"] and det["parameters"].iloc[0] > 0
