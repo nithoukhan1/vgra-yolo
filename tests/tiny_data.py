@@ -15,7 +15,8 @@ FOLDERS = {"train": "train_aug", "valid": "valid", "test": "test"}
 def make_tiny_dataset(root: str | Path, n_train: int = 12, n_valid: int = 4, n_test: int = 2) -> Path:
     """Patients with one AP and one LAT image each. AP images get a fracture box, LAT images a
     fracture and a pronator sign box, so the pronator sign state is '01' in every pair.
-    Patient 1 also has a third (oblique) image, so its study-side is not a pair."""
+    Patient 1 also has a third (oblique) image, so its study-side is not a pair.
+    Even patients have a torus fracture code (AO 23r-M/2.1), odd patients 23r-M/3.1."""
     import cv2
 
     root = Path(root)
@@ -28,7 +29,7 @@ def make_tiny_dataset(root: str | Path, n_train: int = 12, n_valid: int = 4, n_t
             stem = f"{pid:04d}_{1000 + pid * 10 + proj}_01_WRI-L{proj}_M010"
             rows.append({"filestem": stem, "patient_id": pid, "study_number": 1, "timehash": 1000 + pid * 10 + proj,
                          "gender": "M", "age": 10.0, "laterality": "L", "projection": proj, "initial_exam": 1.0,
-                         "cast": None, "fracture_visible": 1.0, "metal": None, "split": split})
+                         "ao_classification": "23r-M/2.1" if pid % 2 == 0 else "23r-M/3.1", "cast": None, "fracture_visible": 1.0, "metal": None, "split": split})
     df = pd.DataFrame(rows)
     root.mkdir(parents=True, exist_ok=True)
     df.drop(columns="split").to_csv(root / "dataset.csv", index=False)
