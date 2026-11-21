@@ -33,3 +33,22 @@ def test_steps_stop_on_failure():
 def test_unfinished_runs_block_only_the_test_session():
     check = cells()[2]
     assert "(problems if OPEN_TEST else warnings)" in check
+
+
+def test_frozen_weights_manifest_matches_the_test_session_runs():
+    import re
+
+    frozen = json.loads((NB.parents[1] / "docs" / "final_weights.json").read_text(encoding="utf-8"))
+    runs = {k: v for k, v in frozen.items() if not k.startswith("_")}
+    settings = cells()[0]
+    planned = re.search(r"test session: (\[.*?\])", settings).group(1)
+    assert set(json.loads(planned)) == set(runs)
+    for name, v in runs.items():
+        assert re.fullmatch(r"[0-9a-f]{64}", v["sha256"]), name
+        assert v["epochs"] == 100 and v["detector"] == name.rsplit("_s", 1)[0]
+
+
+def test_hash_check_blocks_only_the_test_session():
+    check = cells()[2]
+    assert "final_weights.json" in check and "sha256(" in check
+    assert check.count("(problems if OPEN_TEST else warnings)") == 2  # unfinished run, wrong weights
