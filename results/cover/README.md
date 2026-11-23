@@ -17,3 +17,15 @@ method (naive, CRC, LTT) and alpha (0.01, 0.02), delta 0.1.
 The per-split table (`design_splits.csv.gz`, 32,400 rows) stays outside git; it is reproducible with the command above
 from the dry-run predictions. Rules for any use on test: protocol amendment v1.2, section 11.4 (frozen
 2026-11-23, tag `protocol-v1.2`); the test results will go to `test/`.
+
+`test/` = the one CoVeR test run (amendment v1.2, section 11.4; 2026-11-23 08:47:35 UTC; code = tag `protocol-v1.2`,
+tree 6b36ac0; `COVER_TEST_RUN.json` shows commit baada13, a local commit with the identical tree). Part A consistency
+check PASS.
+
+| File | Content |
+|---|---|
+| `test/summary.txt` | printed tables: consistency check, primary configuration per run, all configurations, who is referred |
+| `test/results.csv` | run x grouping x method x alpha: lateral reads, sensitivity, specificity, extra-miss risk (patient and pair), limit held, same-budget baselines, McNemar counts, patient-bootstrap 95% CIs (2,000), lo |
+| `test/who.csv` | primary configuration: lateral reads and extra misses per subgroup (age band, torus, first visit, cast) |
+| `test/COVER_TEST_RUN.json` | time, commit, runs, configuration |
+| `test_exploratory/` | POST HOC (`scripts/14_cover_explore.py`): valid vs test composition of the fracture-positive pairs |

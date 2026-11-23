@@ -1,0 +1,27 @@
+EXPLORATORY (post hoc) | repo commit 50c904f | runs B0_s0 B0_s1 B0_s2 V8_s0 V8_s1 V8R_s0 V8R_s1 | blind <= 0.005
+                                      measure     valid     test
+                      fracture-positive pairs 1329.0000 634.0000
+                patients with a positive pair  698.0000 335.0000
+                         annotated on PA only    0.0226   0.0126
+                        annotated on LAT only    0.0685   0.0883
+                            annotated on both    0.9090   0.8991
+                                        torus    0.5546   0.5315
+                                  first visit    0.3552   0.3722
+                         torus at first visit    0.2799   0.2776
+              patients with one positive pair    0.5802   0.5970
+         B0_s0: only the lateral view catches    0.0617   0.0931
+             B0_s0: ... and PA score <= 0.005    0.0098   0.0174
+         B0_s1: only the lateral view catches    0.0700   0.0962
+             B0_s1: ... and PA score <= 0.005    0.0083   0.0142
+         B0_s2: only the lateral view catches    0.0685   0.0994
+             B0_s2: ... and PA score <= 0.005    0.0105   0.0237
+         V8_s0: only the lateral view catches    0.0549   0.1009
+             V8_s0: ... and PA score <= 0.005    0.0120   0.0189
+         V8_s1: only the lateral view catches    0.0632   0.0978
+             V8_s1: ... and PA score <= 0.005    0.0083   0.0189
+        V8R_s0: only the lateral view catches    0.0617   0.0978
+            V8R_s0: ... and PA score <= 0.005    0.0083   0.0205
+        V8R_s1: only the lateral view catches    0.0677   0.0978
+            V8R_s1: ... and PA score <= 0.005    0.0090   0.0189
+MEAN over runs: only the lateral view catches    0.0640   0.0976
+            MEAN over runs: PA score <= 0.005    0.0095   0.0189

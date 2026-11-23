@@ -285,3 +285,16 @@ def test_cover_script_valid_and_test(tmp_path):
     assert set(res["run"]) == {"B0_s0", "B0_s1", "ENS"} and res["primary"].sum() == 3
     rec = json.loads((pred / "cover_test" / "COVER_TEST_RUN.json").read_text())
     assert rec["ens_runs"] == ["B0_s0", "B0_s1"] and rec["check_parta"].endswith("settings.csv")
+
+
+def test_explore_script_refuses_without_flag_and_runs(tmp_path):
+    pred = tmp_path / "predictions"
+    write_predictions(pred, runs=("B0_s0",))
+    script = str(REPO / "scripts" / "14_cover_explore.py")
+    r = subprocess.run([sys.executable, script, "--pred", str(pred), "--runs", "B0_s0", "--out", str(tmp_path / "x")], **RUN)
+    assert r.returncode != 0 and "--open-test" in (r.stdout + r.stderr)
+    r = subprocess.run([sys.executable, script, "--pred", str(pred), "--runs", "B0_s0", "--open-test",
+                        "--out", str(tmp_path / "x")], **RUN)
+    assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
+    comp = pd.read_csv(tmp_path / "x" / "composition.csv")
+    assert {"valid", "test"} <= set(comp.columns) and comp["measure"].str.startswith("MEAN over runs").sum() == 2

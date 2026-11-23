@@ -1,0 +1,36 @@
+{
+  "opened_utc": "2026-11-23T08:47:35+00:00",
+  "commit": "baada13",
+  "runs": [
+    "B0_s0",
+    "B0_s1",
+    "B0_s2",
+    "V8_s0",
+    "V8_s1",
+    "V8R_s0",
+    "V8R_s1",
+    "B1_s0",
+    "ENS"
+  ],
+  "ens_runs": [
+    "B0_s0",
+    "B0_s1",
+    "B0_s2",
+    "V8_s0",
+    "V8_s1",
+    "V8R_s0",
+    "V8R_s1"
+  ],
+  "alphas": [
+    0.01,
+    0.02
+  ],
+  "delta": 0.1,
+  "primary": {
+    "method": "ltt",
+    "alpha": 0.02,
+    "grouping": "all"
+  },
+  "boot": 2000,
+  "check_parta": "results/parta/test/study/settings.csv"
+}
