@@ -1,7 +1,10 @@
-# Analysis protocol (FROZEN v1.0, approved by the project owner on 2026-11-18; amendment v1.1 on 2026-11-18)
+# Analysis protocol (FROZEN v1.0, approved by the project owner on 2026-11-18; amendment v1.1 on 2026-11-18; amendment v1.2 on 2026-11-23)
 
 Status: FROZEN. Tag `protocol-v1` marks v1.0. Amendment v1.1 (owner approval 2026-11-18, before the test
-split was opened) adds one robustness detector, V8R; see section 3, 4.3 item 6 and section 10. The test split may be opened only after all
+split was opened) adds one robustness detector, V8R; see section 3, 4.3 item 6 and section 10. Amendment v1.2
+(owner approval 2026-11-23, AFTER the Part A test session, tag `protocol-v1.2`) adds Part B = CoVeR, two
+extension detectors from other families (RT-DETR-l, Faster R-CNN) and one reporting change (B1 in the
+supplement); see section 11. It changes no Part A endpoint, threshold or result. The test split may be opened only after all
 models and choices are fixed (section 2). Any later change is logged in section 10 with date and
 reason (deviations are allowed, but always reported).
 
@@ -45,7 +48,10 @@ opening test, it is fixed, the whole test evaluation is rerun, and the event is 
 | V8 | YOLOv8s | 0, 1 | same |
 | V8R | YOLOv8s + ResCBAM (Ju et al., YOLOv8-AM), amendment v1.1 | 0, 1 | same |
 | +PAC | PAC on each detector above (Part B, only if Gate P passes) | as detector | fixed number of epochs set on valid (section 6) |
-Common recipe: imgsz 1024, batch 16, 100 epochs, SGD lr0 0.01, patience 50, Ultralytics defaults.
+| RD | RT-DETR-l (Ultralytics 8.4.7, transformer), amendment v1.2 | 0 | best epoch on valid (Ultralytics fitness); recipe in 11.3 |
+| FR | Faster R-CNN R50-FPN v2 (torchvision, two-stage), amendment v1.2 | 0 | best epoch on valid (0.1 mAP50 + 0.9 mAP50-95); recipe in 11.3 |
+Common recipe (B0, B1, V8, V8R): imgsz 1024, batch 16, 100 epochs, SGD lr0 0.01, patience 50, Ultralytics defaults.
+RD and FR follow their own standard recipes (section 11.3). Reporting (amendment v1.2): B1 appears in the supplement only (11.2).
 V8R: Ju et al.'s ResBlock_CBAM after each of the four neck C2f layers, layout copied from their YAML
 (`configs/models/yolov8s-rescbam.yaml`, `vgra/rescbam.py`); pretrained YOLOv8s weights in every shared
 layer, the four blocks randomly initialised; same recipe and seeds as V8, so V8R vs V8 isolates the module.
@@ -165,6 +171,7 @@ the confirmatory numbers are the test-split numbers under this protocol.
 ## 10. Deviations log
 | Date | Change | Reason |
 |---|---|---|
+| 2026-11-23 | AMENDMENT v1.2 frozen (owner approval 2026-11-23; tag `protocol-v1.2`), after the Part A test session: section 11 = (a) Part B CoVeR with its primary configuration, secondary configurations, baselines, outcomes, Part A consistency check and the one command that applies it to test; (b) extension detectors RD (RT-DETR-l) and FR (Faster R-CNN R50-FPN v2) with recipes, selection, deadline and evaluation; (c) B1 reported in the supplement only. CoVeR had been designed on valid only (row below); nothing from this section had touched the test split | Owner decisions of 2026-11-23; fixed before any new use of the test split |
 | 2026-11-23 | POST HOC (after the test session), validation split only: Part B = CoVeR, conformal view referral (`vgra/cover.py`, `scripts/13_cover.py`, I6). Design study on valid (8 frozen detectors + their mean, 300 patient half-splits); the test split was not used. Any use of CoVeR on test requires amendment v1.2 (rules, primary configuration, baselines, outputs) frozen and tagged first; the script refuses the test split without --open-test and records the run | New research question raised by the Part A result; kept separate from the confirmatory analysis |
 | 2026-11-21 | TEST SESSION executed once with `notebooks/kaggle_eval.ipynb` (OPEN_TEST = True) at tag `parta-test-v1` (26ede6c): all 8 best.pt matched `docs/final_weights.json`; test split opened 06:19:09 UTC (I1), 06:25:07 (I3), 06:34:20 (I4); no step failed and nothing was rerun; no deviation from the protocol. Outputs: `results/parta/test/`. Every analysis added after this date is post hoc and is reported as exploratory | Confirmatory results fixed |
 | 2026-11-21 | Detector weights frozen before the test split is opened: all 8 runs FINISHED (100 epochs each; V8R within the deadline of section 3); SHA-256 of every best.pt in `docs/final_weights.json`; the test session uses one dataset `vgra-final-detectors` (runs/<name>/ with best.pt, metrics.json, results.csv, args.yaml, run_info.json) and the evaluation notebook refuses to open the test split if any best.pt differs from the frozen value. B0_s0 and B1_s0 were trained at commit 60fc83f, the others at aeaa4c2 (detectors-v2) and 81a91c8 (detectors-v3); training code and recipe are identical across these commits (later commits add tools only) | The evaluated models are provably the ones fixed before any test result |
@@ -172,3 +179,88 @@ the confirmatory numbers are the test-split numbers under this protocol.
 | 2026-11-18 | Part A tools I1 + I2, written and tested on valid before the test split is opened (implementation of 4.2, 4.3 and 7, no change of endpoint): `scripts/10_predict.py` (all images of a split, protocol NMS; the test split is refused without `--open-test`, which writes TEST_OPENED.json); `vgra/study.py` + `scripts/12_study_level.py`. Fixed details: (a) image score = own-image maximum if > 0.001 else 0, which equals the top box after NMS (checked identical on all 36,846 valid image-class rows of B0_s0); (b) a study is positive if its score is above the valid threshold = 95th percentile (numpy linear) of the negative-study scores; (c) stacking = logistic regression on [logit PA, logit LAT], fitted on all valid pairs and applied to test (on valid itself, development numbers use patient-grouped 5-fold out-of-fold scores); (d) every contrast also reports the specificity difference with McNemar on the negative studies (4.3 item 3: specificity achieved on test can differ from 95%); (e) Holm families = one contrast and one test over the findings, the primary test (fracture, max vs PA) unadjusted; (f) pooled seed bootstrap = the same resampled patients for every seed, mean of the per-seed differences; (g) subgroups use the whole-valid thresholds; torus = AO code containing M/2.1 on any image of the same study (patient, study number); age = age on the PA image; initial exam and cast = 1 on either image; (h) contrasts computed: max vs PA (primary for fracture), max vs LAT, LAT vs PA (RQ3), mean / noisy-OR / stacking vs max (RQ4) | Every analysis choice is in code and tested before any test result exists |
 | 2026-11-18 | Amendment v1.1 (owner approval, before the test split was opened): V8R = YOLOv8s + ResCBAM of Ju et al. (best attention module published on this split), seeds 0 and 1, same recipe as V8, as an extra robustness detector (4.3 item 6) and a descriptive module comparison (4.3 item 7); 7-day deadline rule in section 3. Code tag `detectors-v3` (adds V8R only; B0, B1 and V8 code unchanged) | Answers "would a published attention detector change the conclusion?" and "is a published module gain larger than seed noise?"; decided before any test result |
 | 2026-11-18 | v1.0 frozen; before freezing, section 5 was made explicit (Gate P training and evaluation settings) | Pre-registration completeness; no Gate P result existed |
+
+## 11. Amendment v1.2 (owner approval 2026-11-23, after the Part A test session)
+
+### 11.1 Status
+Written after the Part A test session of 2026-11-21. It adds new, pre-specified analyses and changes no Part A
+endpoint, threshold or result; Part A stays the confirmatory analysis of the paper. Tag `protocol-v1.2` marks the
+commit that contains this section and the code it names; nothing in this section may use the test split before that
+tag is on GitHub. In the paper, everything here is reported as pre-specified analyses added after the Part A test
+session.
+
+### 11.2 Reporting change
+Main text: B0 (3 seeds), V8 (2), V8R (2; Ju et al.'s published model) and the extension detectors RD and FR (11.3).
+B1 (YOLO11s + SCC, an adapter from our earlier design) is reported in full in the supplementary material, not in the
+main text, so that the main text shows published architectures only. B1 was pre-specified, its test results are
+already public (`results/parta/test/`) and agree with the other detectors (fracture both vs PA +0.074, p < 0.001);
+nothing is removed from the record.
+
+### 11.3 Extension detectors (other detector families)
+Purpose: do the Part A findings and CoVeR hold beyond one-stage YOLO detectors?
+
+| | RD: RT-DETR-l (transformer) | FR: Faster R-CNN R50-FPN v2 (two-stage) |
+|---|---|---|
+| Library, weights | Ultralytics 8.4.7, `rtdetr-l.pt` (COCO) | torchvision `fasterrcnn_resnet50_fpn_v2`, COCO_V1 weights; new box predictor, 9 classes + background |
+| Input | imgsz 640 (square letterbox) | longer side 1024 (min_size = max_size = 1024), no letterbox |
+| Schedule | 72 epochs, patience 50 | 24 epochs; learning rate x 0.1 at epochs 16 and 22; linear warm-up 1,000 iterations |
+| Batch | 8 (4 if 8 runs out of memory in the first epoch) | 4 (2 if 4 runs out of memory in the first epoch), learning rate scaled linearly |
+| Optimiser | AdamW, lr0 1e-4, weight decay 1e-4; warm-up 3 epochs rising from 0 for every parameter group (`warmup_bias_lr` 0: the Ultralytics default 0.1 is 1,000x lr0); linear decay to lr0 x 0.01 (Ultralytics default) | SGD momentum 0.9, lr 0.005 at batch 4, weight decay 1e-4; mixed precision |
+| Augmentation | Ultralytics defaults (as for the YOLO detectors) | horizontal flip p = 0.5 (torchvision standard) |
+| Selection | best epoch on valid, Ultralytics fitness | valid after every epoch; best epoch by 0.1 mAP50 + 0.9 mAP50-95, computed with the repo AP code (Ultralytics matching and `ap_per_class`, `vgra/premise.py`) |
+| Inference | end-to-end (no NMS), at most 300 queries, score > 0.001 | score > 0.001, NMS IoU 0.5 per class, at most 300 detections |
+
+Common: seed 0; the training images, classes and splits of section 1 (original training images only).
+RD input 640: RT-DETR-l needs 275 GFLOPs at 1024 (5x YOLO11s); every endpoint compares views within one detector, so the
+input size does not bias it. The image score of a class is its highest confidence in the image (as in 4.2).
+Implementation (`configs/RD.yaml`, `configs/FR.yaml`, training, inference and validation code, a Kaggle notebook)
+follows this section and is logged in section 10; a smoke run (1 epoch on 10% of train) may only decide the batch
+fallback above. Deadline: each detector must finish all epochs within 21 days of the `protocol-v1.2` tag; an
+unfinished detector is reported as not completed and is never evaluated on test.
+Freezing and evaluation: SHA-256 of each best weights file added to `docs/final_weights.json`; a dry run on valid; one
+evaluation session that opens the test split once for RD and FR only (I1, I3, I4, each writes TEST_OPENED.json); then
+I2 (section 4: primary endpoint per detector, secondary endpoints, RQ1 with the Gate 2 rule, subgroups) and CoVeR
+(11.4) on CPU. Detector metrics (T2) use the Ultralytics validator for RD and the repo AP code for FR.
+
+### 11.4 Part B: CoVeR (conformal view referral), fracture
+Code: `vgra/cover.py` and `scripts/13_cover.py` at tag `protocol-v1.2`.
+Policy per PA + LAT pair and detector: t = the Part A primary threshold of the detector (4.2); PA score > t -> positive
+from PA alone; PA score <= lo -> negative from PA alone (lateral not read); otherwise read the lateral and decide
+max(PA, LAT) > t. Risk = extra misses relative to always-both at t (fracture-positive pairs that always-both catches
+and the gate misses); unit = patient (loss = share of the patient's positive pairs that are extra misses; risk = mean
+over patients with a positive pair); lo from a fixed grid by fixed-sequence search (code docstring).
+
+PRIMARY configuration: learn-then-test with the Hoeffding-Bentkus p-value, alpha = 0.02, delta = 0.10, one lo for all
+ages, calibrated on all valid pairs of the detector, applied once to test. In words: at most 2 extra missed fractures
+per 100 fracture patients compared with always reading both views, with 90% confidence.
+
+Detectors: each main-text detector separately (B0_s0, B0_s1, B0_s2, V8_s0, V8_s1, V8R_s0, V8R_s1; RD_s0 and FR_s0
+after 11.3); ENS = mean PA and mean LAT score of the 7 main-text Part A detectors (secondary); B1_s0 in the supplement.
+
+Outcomes per detector on test (whole-patient bootstrap 95% CIs, 2,000 resamples, seed 0):
+1. share of pairs whose lateral view is read;
+2. extra-miss risk and whether it is <= 0.02 ("limit held"); the number of the 7 main-text Part A detectors in which
+   the limit held (each is expected to hold with probability >= 0.9; no further claim);
+3. sensitivity and specificity of CoVeR, of always-both and of PA only (PA at its own valid 95%-specificity threshold);
+4. sensitivity of CoVeR minus random referral of the same number of lateral reads (expected value), with CI;
+5. McNemar CoVeR vs always-both on the positive pairs (extra misses) and on the negative pairs (false alarms
+   avoided), descriptive.
+Secondary configurations: per age band (4.4 bands) with LTT alpha 0.02 (main secondary: every band protected
+separately); LTT alpha 0.01 (all ages and per band); CRC alpha 0.01 and 0.02; naive alpha 0.01 and 0.02 (reference
+without correction). Baselines at the same number of lateral reads: random referral and ranking by detector
+disagreement (SD of the PA score over the 7 main-text Part A detectors); oracle reads as reference.
+Subgroups (exploratory, 4.4): share of lateral reads and extra-miss risk per age band, torus, initial exam, cast.
+Consistency check: before any CoVeR number is computed, the always-both threshold, sensitivity, specificity and counts
+of every run must equal the Part A table (`results/parta/test/study/settings.csv`) exactly; the script stops otherwise.
+The valid design study (`results/cover/valid_design/`) is hypothesis-generating only.
+
+Command (run once, after the tag; predictions = `runs/predictions/` of the Part A test session):
+
+    python scripts/13_cover.py --pred <test-session runs/predictions> \
+        --runs B0_s0 B0_s1 B0_s2 V8_s0 V8_s1 V8R_s0 V8R_s1 B1_s0 \
+        --ens-runs B0_s0 B0_s1 B0_s2 V8_s0 V8_s1 V8R_s0 V8R_s1 --ensemble \
+        --eval test --open-test --check-parta results/parta/test/study/settings.csv
+
+Outputs (aggregate tables only, committed under `results/cover/test/`): `results.csv` (every run and configuration,
+primary flagged), `who.csv`, `summary.txt`, `COVER_TEST_RUN.json`. RD_s0 and FR_s0 get the same command after their own
+Part A tables exist (11.3), with `--check-parta` pointing to those tables.

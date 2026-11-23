@@ -183,6 +183,20 @@ def test_design_summary_and_curve_and_who():
     assert {"age_band", "torus", "initial_exam", "cast"} <= set(w["subgroup"])
 
 
+def test_parta_check_matches_the_study_module():
+    v, e = population(n_pairs=700, seed=13), population(n_pairs=400, seed=14)
+    settings, _, _ = st.evaluate_run(v, e, "R_s0", same_split=False, n_boot=5)
+    ok = cv.parta_check(v, e, settings, "R_s0")
+    assert ok["ok"] and math.isclose(ok["sens"], ok["parta_sens"])
+    bad = settings.copy()
+    bad.loc[(bad["setting"] == "max"), "sens"] += 0.001
+    assert not cv.parta_check(v, e, bad, "R_s0")["ok"]
+    assert not cv.parta_check(v, e, settings, "other_run")["ok"]
+    # same split (valid development table)
+    settings_v, _, _ = st.evaluate_run(v, v, "R_s0", same_split=True, n_boot=5)
+    assert cv.parta_check(v, v, settings_v, "R_s0")["ok"]
+
+
 def test_confirm_uses_valid_threshold_and_gives_cis():
     v, e = population(n_pairs=900, seed=9), population(n_pairs=500, seed=10)
     r = cv.confirm(v, e, 0.02, "ltt", "all", n_boot=60, seed=0)
@@ -239,8 +253,35 @@ def test_cover_script_valid_and_test(tmp_path):
 
     r = subprocess.run([sys.executable, script, "--pred", str(pred), "--runs", "B0_s0", "--eval", "test"], **RUN)
     assert r.returncode != 0 and "opened once" in (r.stdout + r.stderr)
-    r = subprocess.run([sys.executable, script, "--pred", str(pred), "--runs", "B0_s0", "B0_s1", "--eval", "test",
-                        "--open-test", "--boot", "30"], **RUN)
+    r = subprocess.run([sys.executable, script, "--pred", str(pred), "--runs", "B0_s0", "--eval", "test",
+                        "--open-test"], **RUN)
+    assert r.returncode != 0 and "--check-parta" in (r.stdout + r.stderr)
+    r = subprocess.run([sys.executable, script, "--pred", str(pred), "--runs", "B0_s0", "--ens-runs", "B9_s0",
+                        "--eval", "valid"], **RUN)
+    assert r.returncode != 0 and "subset" in (r.stdout + r.stderr)
+
+    # Part A settings of the synthetic test split, as scripts/12_study_level.py would write them
+    tabs = {}
+    for split in ("valid", "test"):
+        pairs = pd.read_csv(pred / f"pairs_{split}.csv", dtype={"pair_id": str, "laterality": str})
+        for run in ("B0_s0", "B0_s1"):
+            imgs = pd.read_csv(pred / run / f"{split}_images.csv.gz")
+            tabs[(run, split)] = st.study_table(imgs, pairs, CLASSES, findings=("fracture",))
+    settings = pd.concat([st.evaluate_run(tabs[(r, "valid")], tabs[(r, "test")], r, False, 5)[0]
+                          for r in ("B0_s0", "B0_s1")], ignore_index=True)
+    settings.to_csv(tmp_path / "settings.csv", index=False)
+    bad = settings.copy()
+    bad.loc[bad["setting"] == "max", "spec"] -= 0.01
+    bad.to_csv(tmp_path / "bad.csv", index=False)
+    common = ["--pred", str(pred), "--runs", "B0_s0", "B0_s1", "--ens-runs", "B0_s0", "B0_s1", "--ensemble",
+              "--eval", "test", "--open-test", "--boot", "30"]
+    r = subprocess.run([sys.executable, script, *common, "--check-parta", str(tmp_path / "bad.csv")], **RUN)
+    assert r.returncode != 0 and "CONSISTENCY CHECK FAILED" in (r.stdout + r.stderr)
+    assert not (pred / "cover_test" / "results.csv").exists()
+    r = subprocess.run([sys.executable, script, *common, "--check-parta", str(tmp_path / "settings.csv")], **RUN)
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
+    assert "PART A CONSISTENCY CHECK" in r.stdout and "PASS" in r.stdout and "PRIMARY limit held in" in r.stdout
     res = pd.read_csv(pred / "cover_test" / "results.csv")
-    assert res["primary"].sum() == 2 and (pred / "cover_test" / "COVER_TEST_RUN.json").is_file()
+    assert set(res["run"]) == {"B0_s0", "B0_s1", "ENS"} and res["primary"].sum() == 3
+    rec = json.loads((pred / "cover_test" / "COVER_TEST_RUN.json").read_text())
+    assert rec["ens_runs"] == ["B0_s0", "B0_s1"] and rec["check_parta"].endswith("settings.csv")

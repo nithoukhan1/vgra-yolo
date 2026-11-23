@@ -50,7 +50,8 @@ METHODS = ("naive", "crc", "ltt")
 GROUPINGS = ("all", "age")
 REFER_ALL = -1.0
 GRID = np.concatenate([[REFER_ALL, 0.0], np.logspace(-3, 0, 3001)])
-# Primary configuration: PROPOSAL, frozen only by protocol amendment v1.2 (docs/PROTOCOL.md).
+# Primary configuration, FROZEN by protocol amendment v1.2 (docs/PROTOCOL.md section 11.4, owner approval 2026-11-23):
+# at most 2 extra missed fractures per 100 fracture patients relative to always-both, with 90% confidence, all ages.
 PRIMARY = {"method": "ltt", "alpha": 0.02, "grouping": "all"}
 SUBGROUP_COLS = ("age_band", "torus", "initial_exam", "cast")
 
@@ -360,6 +361,33 @@ def who_is_referred(tab: pd.DataFrame, lo_map: dict, grouping: str, t: float | N
                      "extra_pair": float(extra[m & y].mean()) if (m & y).any() else float("nan"),
                      "extra_patient": patient_risk(extra[m], y[m], units_of(pid[m])) if (m & y).any() else float("nan")})
     return pd.DataFrame(rows)
+
+
+# ----------------------------------------------------------------------------------------------
+# consistency with Part A (checked before any CoVeR number is read)
+# ----------------------------------------------------------------------------------------------
+
+def parta_check(tab_v: pd.DataFrame, tab_e: pd.DataFrame, settings: pd.DataFrame, run: str) -> dict:
+    """Always-both decision computed here vs the Part A table of vgra.study (finding fracture, setting max):
+    threshold, sensitivity, specificity and counts must be identical."""
+    v, e = fracture_rows(tab_v), fracture_rows(tab_e)
+    y_v = v["y"].values.astype(bool)
+    t = st.threshold_at(np.maximum(v["pa"].values.astype(float), v["lat"].values.astype(float))[~y_v])
+    y = e["y"].values.astype(bool)
+    both = both_views(e["pa"].values, e["lat"].values, t)
+    ours = {"threshold": t, "sens": float(both[y].mean()), "spec": float((~both[~y]).mean()),
+            "n_pos": int(y.sum()), "n_neg": int((~y).sum())}
+    row = settings[(settings["run"] == run) & (settings["finding"] == FINDING) & (settings["setting"] == "max")]
+    if len(row) != 1:
+        return {"run": run, "ok": False, "reason": "run not in the Part A table", **ours}
+    row = row.iloc[0]
+    ok = (math.isclose(ours["threshold"], float(row["threshold"]), rel_tol=1e-9, abs_tol=1e-12)
+          and math.isclose(ours["sens"], float(row["sens"]), rel_tol=0, abs_tol=1e-12)
+          and math.isclose(ours["spec"], float(row["spec"]), rel_tol=0, abs_tol=1e-12)
+          and ours["n_pos"] == int(row["n_pos"]) and ours["n_neg"] == int(row["n_neg"]))
+    return {"run": run, "ok": bool(ok), "reason": "" if ok else "differs from Part A", **ours,
+            "parta_threshold": float(row["threshold"]), "parta_sens": float(row["sens"]),
+            "parta_spec": float(row["spec"])}
 
 
 # ----------------------------------------------------------------------------------------------

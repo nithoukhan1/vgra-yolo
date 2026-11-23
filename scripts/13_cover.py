@@ -4,14 +4,19 @@ Reads the prediction tables of scripts/10_predict.py (the same inputs as scripts
 
     python scripts/13_cover.py --pred <predictions> --runs B0_s0 B0_s1 B0_s2 B1_s0 V8_s0 V8_s1 V8R_s0 V8R_s1 \
         --eval valid --ensemble
-    python scripts/13_cover.py --pred <predictions> --runs <frozen runs> --eval test --open-test --ensemble
+    python scripts/13_cover.py --pred <predictions> --runs <frozen runs> --ens-runs <main-text runs> --ensemble \
+        --eval test --open-test --check-parta results/parta/test/study/settings.csv
 
 --eval valid  = DESIGN STUDY (exploratory): repeated patient half-splits of valid (calibrate on one half,
                 evaluate on the other) for every run x grouping x method x alpha; the risk / lateral-read curve on
                 all of valid; who is referred under the primary configuration. Not for claims about test.
 --eval test   = CONFIRMATORY USE, only after protocol amendment v1.2 freezes the rules: lo calibrated on all
-                of valid, applied once to test, patient-bootstrap CIs. Refused without --open-test; writes
-                COVER_TEST_RUN.json (time, commit, runs, configuration).
+                of valid, applied once to test, patient-bootstrap CIs. Refused without --open-test and without
+                --check-parta; writes COVER_TEST_RUN.json (time, commit, runs, configuration).
+--check-parta = the Part A settings table of the same split (study_<eval>/settings.csv of scripts/12_study_level.py):
+                before any CoVeR number, the always-both threshold, sensitivity, specificity and counts of every
+                run must equal Part A exactly, or the script stops.
+--ens-runs    = runs that form ENS (mean score) and the detector-disagreement baseline (default: all --runs).
 
 Writes to <out>/cover_<eval>/:
   valid: design_splits.csv.gz, design_summary.csv, curves.csv, who.csv, summary.txt, info.json
@@ -38,7 +43,11 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--runs", nargs="+", required=True)
     ap.add_argument("--eval", required=True, choices=["valid", "test"])
     ap.add_argument("--open-test", action="store_true", help="required for --eval test (after amendment v1.2)")
-    ap.add_argument("--ensemble", action="store_true", help="also evaluate ENS = mean score of the given runs")
+    ap.add_argument("--ensemble", action="store_true", help="also evaluate ENS = mean score of the --ens-runs")
+    ap.add_argument("--ens-runs", nargs="+", default=None,
+                    help="runs for ENS and the disagreement baseline (default: all --runs)")
+    ap.add_argument("--check-parta", default=None,
+                    help="Part A settings.csv of the same split; required for --eval test")
     ap.add_argument("--alphas", nargs="+", type=float, default=None, help="default: vgra.cover.ALPHAS")
     ap.add_argument("--delta", type=float, default=None, help="default: vgra.cover.DELTA")
     ap.add_argument("--splits", type=int, default=300, help="design study: patient half-splits of valid")
@@ -63,6 +72,11 @@ def main() -> int:
     if args.eval == "test" and not args.open_test:
         raise SystemExit("CoVeR on the test split is opened once, after protocol amendment v1.2 freezes its rules; "
                          "add --open-test then")
+    if args.eval == "test" and not args.check_parta:
+        raise SystemExit("--eval test needs --check-parta <Part A study_test/settings.csv> (protocol 11.4)")
+    ens_runs = list(args.ens_runs or args.runs)
+    if not set(ens_runs) <= set(args.runs):
+        raise SystemExit("--ens-runs must be a subset of --runs")
     import numpy as np
     import pandas as pd
 
@@ -90,19 +104,37 @@ def main() -> int:
             tabs_e[run] = cv.fracture_rows(st.study_table(pd.read_csv(pred / run / "test_images.csv.gz"), pairs_e,
                                                           classes, findings=(cv.FINDING,)))
     runs = list(args.runs)
-    unc_v = cv.disagreement(tabs_v) if len(runs) >= 2 else None
-    unc_e = cv.disagreement(tabs_e) if (len(runs) >= 2 and tabs_e) else None
-    if args.ensemble and len(runs) >= 2:
-        tabs_v["ENS"] = cv.ensemble_table({r: tabs_v[r] for r in runs})
+    unc_v = cv.disagreement({r: tabs_v[r] for r in ens_runs}) if len(ens_runs) >= 2 else None
+    unc_e = cv.disagreement({r: tabs_e[r] for r in ens_runs}) if (len(ens_runs) >= 2 and tabs_e) else None
+
+    # consistency with Part A, before any CoVeR number
+    check_lines, check_failed = [], False
+    if args.check_parta:
+        parta = pd.read_csv(args.check_parta)
+        checks = pd.DataFrame([cv.parta_check(tabs_v[r], tabs_e[r] if tabs_e else tabs_v[r], parta, r) for r in runs])
+        check_failed = not checks["ok"].all()
+        check_lines.append(f"PART A CONSISTENCY CHECK against {args.check_parta}: "
+                           f"{'PASS' if not check_failed else 'FAILED'}")
+        check_lines.append(checks[["run", "ok", "threshold", "parta_threshold", "sens", "parta_sens", "spec",
+                                   "parta_spec", "n_pos", "n_neg"]].to_string(index=False, float_format=lambda v: f"{v:.6f}")
+                           if "parta_sens" in checks else checks.to_string(index=False))
+        if check_failed:
+            print("\n".join(check_lines))
+            raise SystemExit("PART A CONSISTENCY CHECK FAILED: no CoVeR number was computed")
+
+    if args.ensemble and len(ens_runs) >= 2:
+        tabs_v["ENS"] = cv.ensemble_table({r: tabs_v[r] for r in ens_runs})
         if tabs_e:
-            tabs_e["ENS"] = cv.ensemble_table({r: tabs_e[r] for r in runs})
+            tabs_e["ENS"] = cv.ensemble_table({r: tabs_e[r] for r in ens_runs})
         runs.append("ENS")
 
     buf = io.StringIO()
     with redirect_stdout(buf):
         prim = cv.PRIMARY
-        print(f"repo commit: {commit} | eval: {args.eval} | runs: {' '.join(runs)} | alphas {alphas} | delta {delta}"
-              f" | primary (PROPOSAL until amendment v1.2): {prim}")
+        print(f"repo commit: {commit} | eval: {args.eval} | runs: {' '.join(runs)} | ENS/disagreement runs: "
+              f"{' '.join(ens_runs)} | alphas {alphas} | delta {delta} | primary (amendment v1.2): {prim}")
+        for line in check_lines:
+            print(line)
         if args.eval == "valid":
             print(f"DESIGN STUDY (exploratory): {args.splits} patient half-splits of valid; not for claims about test")
             design, curves, who = [], [], []
@@ -130,7 +162,7 @@ def main() -> int:
                     "sens_pa", "spec", "spec_both", "extra_patient", "extra_patient_p90", "held", "extra_worst_age",
                     "held_all_ages", "random_sens", "uncert_sens", "oracle_reads"]
             show(summary[(summary["method"] == prim["method"]) & (summary["alpha"] == prim["alpha"])
-                         & (summary["grouping"] == prim["grouping"])], cols, "PRIMARY configuration (proposal), per run")
+                         & (summary["grouping"] == prim["grouping"])], cols, "PRIMARY configuration (amendment v1.2), per run")
             show(summary[summary["run"] == ("ENS" if "ENS" in runs else runs[0])], cols,
                  f"All configurations, {'ENS' if 'ENS' in runs else runs[0]}")
             show(summary.groupby(["grouping", "method", "alpha"], sort=False)[
@@ -174,6 +206,9 @@ def main() -> int:
                                        "extra_patient_lo", "extra_patient_hi", "held", "sens_diff_random_lo",
                                        "sens_diff_random_hi", "mcnemar_pos_c", "mcnemar_neg_b"],
                  "PRIMARY configuration on test")
+            main = res[res["primary"] & res["run"].isin([r for r in ens_runs])]
+            print(f"\nPRIMARY limit held in {int(main['held'].sum())} of {len(main)} main runs (--ens-runs) "
+                  f"({', '.join(main.loc[~main['held'], 'run']) or 'no failures'})")
             show(res, ["run", "grouping", "method", "alpha", "refer_rate", "sens", "spec", "extra_patient", "held"],
                  "All configurations on test")
             show(who, ["run", "subgroup", "level", "n_pairs", "n_pos", "refer_rate", "extra_pair", "extra_patient"],
@@ -181,7 +216,8 @@ def main() -> int:
             res.to_csv(out / "results.csv", index=False)
             who.to_csv(out / "who.csv", index=False)
             record = {"opened_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "commit": commit,
-                      "runs": runs, "alphas": alphas, "delta": delta, "primary": prim, "boot": args.boot}
+                      "runs": runs, "ens_runs": ens_runs, "alphas": alphas, "delta": delta, "primary": prim,
+                      "boot": args.boot, "check_parta": args.check_parta}
             (out / "COVER_TEST_RUN.json").write_text(json.dumps(record, indent=2))
             print(f"COVER TEST RUN RECORDED: {record}")
 

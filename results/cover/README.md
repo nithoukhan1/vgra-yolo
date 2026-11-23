@@ -15,4 +15,5 @@ method (naive, CRC, LTT) and alpha (0.01, 0.02), delta 0.1.
 | `info.json` | commit, runs, settings |
 
 The per-split table (`design_splits.csv.gz`, 32,400 rows) stays outside git; it is reproducible with the command above
-from the dry-run predictions. Rules for any use on test: protocol amendment v1.2 (not yet frozen).
+from the dry-run predictions. Rules for any use on test: protocol amendment v1.2, section 11.4 (frozen
+2026-11-23, tag `protocol-v1.2`); the test results will go to `test/`.

@@ -19,6 +19,18 @@ SCC classes: `SCC` (the operation), `SCCAdapter` (zero-initialised residual wrap
 
 In the paper, write SCC out as "self-calibrated convolution (SCNet, CVPR 2020)" at first use.
 
+## Detectors
+
+| ID | Detector | In the paper |
+|---|---|---|
+| B0 | YOLO11s | main text |
+| B1 | YOLO11s + SCC | supplement (amendment v1.2) |
+| V8 | YOLOv8s | main text |
+| V8R | YOLOv8s + ResCBAM (Ju et al., YOLOv8-AM) | main text |
+| RD | RT-DETR-l (transformer) | main text (amendment v1.2) |
+| FR | Faster R-CNN R50-FPN v2 (two-stage) | main text (amendment v1.2) |
+| ENS | mean score of the 7 main-text Part A detectors (CoVeR only) | main text, secondary |
+
 ## Data and training terms
 
 | Name | Meaning |
