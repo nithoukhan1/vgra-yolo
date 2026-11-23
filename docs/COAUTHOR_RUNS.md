@@ -53,6 +53,10 @@ per account; please do not share your login). Nothing in the code needs editing.
    or make it public.
 3. Tell the project owner the dataset name.
 
+## If the second cell says `STOP: the code is not at ...`
+The code tag named in `REF` is not on GitHub yet (or is misspelled). Nothing has run and almost no quota is used.
+Tell the project owner; once the tag is pushed, Save Version again with nothing changed.
+
 ## Please do not
 - change `REF`, `RUNS` or any code between versions (notebook D: `SMOKE` changes once, after the smoke version, and
   `BATCH` only as in step 2 of its section);

@@ -1,6 +1,6 @@
 """The evaluation notebook stops on any failure and never runs a step without the run check; the training notebook
 starts the right commands (smoke or auto-resume, the protocol batch fallback), downloads every pretrained file first
-and reports each run."""
+and reports each run; both stop before anything runs when the cloned code is not at REF."""
 
 import ast
 import json
@@ -59,6 +59,40 @@ def test_hash_check_blocks_only_the_test_session():
     assert check.count("(problems if OPEN_TEST else warnings)") == 2  # unfinished run, wrong weights
 
 
+# ---------- both notebooks: the code must be at REF -------------------------------------------
+
+@pytest.mark.parametrize("nb", [NB, NB_TRAIN], ids=["eval", "train"])
+def test_setup_stops_when_the_code_is_not_at_ref(tmp_path, monkeypatch, nb):
+    """2026-11-23: notebook D was started before the tag was on GitHub; `git checkout` failed, the notebook went on
+    with the old main and crashed later. The setup cell now stops right after the checkout."""
+    import subprocess
+
+    setup = cells(nb)[1]
+    assert setup.index("git checkout") < setup.index("rev-parse") < setup.index("pip install")
+    guard = "\n".join(line for line in setup.splitlines() if not line.lstrip().startswith(("!", "%", "#")))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*a):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *a], cwd=repo, check=True,
+                       capture_output=True)
+
+    git("init", "-q")
+    (repo / "a.txt").write_text("1")
+    git("add", "a.txt")
+    git("commit", "-q", "-m", "one")
+    git("tag", "detectors-v4")
+    (repo / "a.txt").write_text("2")
+    git("commit", "-q", "-am", "two")
+    monkeypatch.chdir(repo)
+    with pytest.raises(RuntimeError, match="not at detectors-v4"):  # checkout failed: still on a later commit
+        exec(guard, {"REF": "detectors-v4"})
+    with pytest.raises(RuntimeError, match="not at detectors-v9"):  # the tag does not exist
+        exec(guard, {"REF": "detectors-v9"})
+    git("checkout", "-q", "detectors-v4")
+    exec(guard, {"REF": "detectors-v4"})  # at the tag: goes on
+
+
 # ---------- training notebook -----------------------------------------------------------------
 
 def train_settings(**change):
@@ -110,7 +144,7 @@ def test_training_commands(tmp_path, monkeypatch, smoke, batch):
     monkeypatch.setattr(subprocess, "Popen", FakePopen)
     monkeypatch.setattr(time, "sleep", lambda s: None)
     ns = train_settings(SMOKE=smoke, BATCH=batch)
-    exec(cells(NB_TRAIN)[3].replace("/kaggle/working", str(tmp_path)), ns)
+    exec(cells(NB_TRAIN)[3].replace("/kaggle/working", tmp_path.as_posix()), ns)
     assert len(calls) == 2
     for cmd, (cfg, seed, gpu) in zip(calls, ns["RUNS"]):
         exp = Path(cfg).stem
@@ -124,7 +158,7 @@ def test_training_commands(tmp_path, monkeypatch, smoke, batch):
 def _summary(tmp_path, capsys, **change):
     ns = train_settings(**change)
     ns["os"] = __import__("os")
-    exec(cells(NB_TRAIN)[4].replace("/kaggle/working", str(tmp_path)), ns)
+    exec(cells(NB_TRAIN)[4].replace("/kaggle/working", tmp_path.as_posix()), ns)
     return capsys.readouterr().out
 
 
