@@ -1,0 +1,26 @@
+{
+  "commit": "f380883",
+  "runs": [
+    "B0_s0",
+    "B0_s1",
+    "B0_s2",
+    "B1_s0",
+    "V8_s0",
+    "V8_s1",
+    "V8R_s0",
+    "V8R_s1",
+    "ENS"
+  ],
+  "splits": 300,
+  "alphas": [
+    0.01,
+    0.02
+  ],
+  "delta": 0.1,
+  "primary_proposal": {
+    "method": "ltt",
+    "alpha": 0.02,
+    "grouping": "all"
+  },
+  "seed": 0
+}
