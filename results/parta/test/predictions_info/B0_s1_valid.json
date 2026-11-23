@@ -1,0 +1,59 @@
+{
+  "run": "B0_s1",
+  "weights": "/kaggle/input/datasets/<owner>/vgra-final-detectors/runs/B0_s1/weights/best.pt",
+  "split": "valid",
+  "commit": "26ede6c",
+  "smoke": false,
+  "imgsz": 1024,
+  "conf": 0.001,
+  "iou": 0.7,
+  "max_det": 300,
+  "images": 4094,
+  "pairs": 1884,
+  "detections": 43140,
+  "map50": 0.6217,
+  "map50_95": 0.4063,
+  "per_class": {
+    "boneanomaly": {
+      "boxes": 53,
+      "ap50": 0.0996,
+      "ap50_95": 0.0308
+    },
+    "bonelesion": {
+      "boxes": 8,
+      "ap50": 0.407,
+      "ap50_95": 0.2379
+    },
+    "fracture": {
+      "boxes": 3740,
+      "ap50": 0.9462,
+      "ap50_95": 0.5801
+    },
+    "metal": {
+      "boxes": 168,
+      "ap50": 0.9352,
+      "ap50_95": 0.8149
+    },
+    "periostealreaction": {
+      "boxes": 697,
+      "ap50": 0.6873,
+      "ap50_95": 0.3598
+    },
+    "pronatorsign": {
+      "boxes": 104,
+      "ap50": 0.6477,
+      "ap50_95": 0.3369
+    },
+    "softtissue": {
+      "boxes": 89,
+      "ap50": 0.2595,
+      "ap50_95": 0.1363
+    },
+    "text": {
+      "boxes": 4754,
+      "ap50": 0.9911,
+      "ap50_95": 0.7539
+    }
+  },
+  "seconds": 69.9
+}

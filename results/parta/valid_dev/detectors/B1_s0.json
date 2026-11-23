@@ -1,0 +1,65 @@
+{
+  "run": "B1_s0",
+  "detector": "B1",
+  "split": "valid",
+  "weights": "/kaggle/input/datasets/<owner>/vgra-final-detectors/runs/B1_s0/weights/best.pt",
+  "commit": "26ede6c",
+  "smoke": false,
+  "imgsz": 1024,
+  "parameters": 9570093,
+  "map50": 0.6278,
+  "map50_95": 0.4041,
+  "precision": 0.6331,
+  "recall": 0.6182,
+  "classes_evaluated": 8,
+  "per_class": {
+    "boneanomaly": {
+      "ap50": 0.1142,
+      "ap50_95": 0.0326,
+      "precision": 0.3761,
+      "recall": 0.1132
+    },
+    "bonelesion": {
+      "ap50": 0.4394,
+      "ap50_95": 0.2167,
+      "precision": 0.3864,
+      "recall": 0.375
+    },
+    "fracture": {
+      "ap50": 0.9491,
+      "ap50_95": 0.5805,
+      "precision": 0.8797,
+      "recall": 0.9095
+    },
+    "metal": {
+      "ap50": 0.9259,
+      "ap50_95": 0.8169,
+      "precision": 0.8962,
+      "recall": 0.8988
+    },
+    "periostealreaction": {
+      "ap50": 0.6915,
+      "ap50_95": 0.3653,
+      "precision": 0.6583,
+      "recall": 0.6827
+    },
+    "pronatorsign": {
+      "ap50": 0.6791,
+      "ap50_95": 0.3457,
+      "precision": 0.5483,
+      "recall": 0.7587
+    },
+    "softtissue": {
+      "ap50": 0.2323,
+      "ap50_95": 0.1199,
+      "precision": 0.3591,
+      "recall": 0.2247
+    },
+    "text": {
+      "ap50": 0.991,
+      "ap50_95": 0.7551,
+      "precision": 0.9604,
+      "recall": 0.9832
+    }
+  }
+}
