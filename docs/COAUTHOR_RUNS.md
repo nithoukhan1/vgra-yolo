@@ -20,6 +20,8 @@ per account; please do not share your login). Nothing in the code needs editing.
    - Notebook B: `REF = "detectors-v2"`, `RUNS = [("configs/V8.yaml", 0, 0), ("configs/V8.yaml", 1, 1)]`
    - Notebook C: `REF = "detectors-v3"`, `RUNS = [("configs/V8R.yaml", 0, 0), ("configs/V8R.yaml", 1, 1)]`
      (YOLOv8s + ResCBAM; output dataset name for example `vgra-v8r-s0-s1`)
+   - Notebook D: `REF = "detectors-v4"`, `RUNS = [("configs/RD.yaml", 0, 0), ("configs/FR.yaml", 0, 1)]`
+     (RT-DETR-l and Faster R-CNN). Notebook D starts with a short smoke version: see the section below.
 4. **Save Version -> Save & Run All (Commit)**. It runs in the background for about 11-12 hours; you can
    close the browser.
 5. When it ends, open the version's log and send the project owner the output of the last cell
@@ -33,13 +35,26 @@ per account; please do not share your login). Nothing in the code needs editing.
    `auto-resume: found ... (N epochs logged)` for each run.
 4. Repeat until the last cell shows `FINISHED` for both runs (usually 3 versions).
 
+## Notebook D (RT-DETR and Faster R-CNN): a short smoke version first
+1. Smoke version: the settings as in the notebook (`SMOKE = True`, `BATCH = {}`). Each run trains 1 epoch on 10%
+   of the training images (well under an hour in total). The last cell prints, for each run, either
+   `SMOKE RUN DONE | batch ...` with the timing lines and the peak GPU memory, or `OUT OF MEMORY`.
+2. Only if a run printed `OUT OF MEMORY`: add the fallback that the message names (`BATCH = {"RD": 4}`,
+   `BATCH = {"FR": 2}` or both) and run the smoke version again. This is the only batch change the protocol allows.
+3. Full runs: set `SMOKE = False` (keep `BATCH` as it is) and Save Version. The smoke output is not needed as input.
+   From here on everything is as in "Versions 2, 3, ..." above.
+4. Send the project owner the last-cell lines of every version (smoke included). Both runs must show `FINISHED`
+   by 2026-12-14; RT-DETR runs 72 epochs and Faster R-CNN 24, so expect about 3 versions.
+
 ## At the end
-1. Notebook page -> Output -> **New Dataset** (for example `vgra-b0-s1-s2`, `vgra-v8-s0-s1` or `vgra-v8r-s0-s1`).
+1. Notebook page -> Output -> **New Dataset** (for example `vgra-b0-s1-s2`, `vgra-v8-s0-s1`, `vgra-v8r-s0-s1` or
+   `vgra-rd-fr-s0`).
 2. Share the dataset with the project owner (dataset Settings -> Sharing -> add the owner's username),
    or make it public.
 3. Tell the project owner the dataset name.
 
 ## Please do not
-- change `REF`, `RUNS` or any code between versions;
+- change `REF`, `RUNS` or any code between versions (notebook D: `SMOKE` changes once, after the smoke version, and
+  `BATCH` only as in step 2 of its section);
 - remove the "weights" cell (it prevents two runs from corrupting a shared download);
 - run the same notebook twice at the same time.

@@ -22,6 +22,12 @@ I3, RQ1 confirmatory (docs/PROTOCOL.md 4.3 item 5): the same test and rule on th
 detector, with 2,000 bootstrap resamples (protocol section 7). Needs --open-test:
     python scripts/04_premise_test.py --runs B0_s0 B0_s1 B0_s2 B1_s0 V8_s0 V8_s1 --split test --open-test
 Writes to <out_dir>/premise_test/ and ends with 'RQ1 (test): ...' per run instead of a gate decision.
+
+From the I1 tables instead of running the detectors (any detector family; protocol amendment v1.2, 11.3):
+    python scripts/04_premise_test.py --runs RD_s0 FR_s0 --split test --open-test --from-pred <predictions>
+The per-image class scores, detections and true-positive flags of scripts/10_predict.py are the same numbers this
+script computes itself (2026-11-23: the Kaggle dry-run outputs of B0_s0, B1_s0 and V8R_s0 on 64 validation pairs were
+reproduced exactly, tables and results), so both routes give the same analysis.
 """
 
 from __future__ import annotations
@@ -52,6 +58,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--boot", type=int, default=None, help="default 500 on valid (Gate 2), 2000 on test (protocol 7)")
     ap.add_argument("--limit", type=int, default=0, help="only the first N pairs (smoke test)")
+    ap.add_argument("--from-pred", default=None,
+                    help="predictions folder of scripts/10_predict.py: build the inputs from its tables")
     ap.add_argument("--device", default=None)
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--index", default=None)
@@ -120,6 +128,44 @@ def infer(model, loader, pairs_df, classes, imgsz, dev, args, run):
                                            "partner_max", "present", "n_boxes"])
     tp_all = np.concatenate(tp_tables) if tp_tables else np.zeros((0, 10), dtype=bool)
     return dets, imgs, tp_all
+
+
+IOUS = [f"tp{int(round(100 * t))}" for t in [0.5 + 0.05 * i for i in range(10)]]
+
+
+def tables_from_predictions(pred: Path, run: str, split: str, limit: int = 0, pairs_per_batch: int = 8):
+    """The inputs of `analyse` from the I1 tables: every image of a PA + LAT pair with its own and its partner's
+    highest score per class, its detections and their true-positive flags at IoU 0.50:0.95. Rows come in the order
+    `infer` produces them (pairs by pair_id in batches of `pairs_per_batch`: the PA images of a batch, then their LAT
+    partners; detections of an image in NMS order), because ties in the AP and bootstrap code depend on row order."""
+    import pandas as pd
+
+    pairs = pd.read_csv(pred / f"pairs_{split}.csv", dtype={"pair_id": str, "laterality": str}).sort_values("pair_id")
+    if limit:
+        pairs = pairs.head(limit)
+    pairs = pairs.reset_index(drop=True)
+    pairs["chunk"], pairs["slot"] = pairs.index // int(pairs_per_batch), pairs.index % int(pairs_per_batch)
+    side = pd.concat([pairs.assign(image_id=pairs["ap_image_id"], partner_id=pairs["lat_image_id"], view=0),
+                      pairs.assign(image_id=pairs["lat_image_id"], partner_id=pairs["ap_image_id"], view=1)])
+    side = side[["image_id", "partner_id", "pair_id", "patient_id", "view", "chunk", "slot"]]
+    # exact float parsing: the default parser can change the last digit, which re-orders tied scores
+    imgs = pd.read_csv(pred / run / f"{split}_images.csv.gz", float_precision="round_trip")
+    dets = pd.read_csv(pred / run / f"{split}_detections.csv.gz", float_precision="round_trip")
+    dets["_row"] = range(len(dets))
+    own = imgs.set_index(["image_id", "cls"])["own_max"]
+    im = side.merge(imgs[["image_id", "cls", "own_max", "present", "n_boxes"]], on="image_id", how="inner")
+    if len(im) != 2 * len(pairs) * imgs["cls"].nunique():
+        raise ValueError(f"{run}: the I1 tables do not cover every image of the {split} pairs")
+    im["partner_max"] = own.reindex(pd.MultiIndex.from_arrays([im["partner_id"], im["cls"]])).to_numpy()
+    im = im.sort_values(["chunk", "view", "slot", "cls"]).reset_index(drop=True)
+    de = side.merge(dets, on="image_id", how="inner", suffixes=("", "_det"))
+    de["partner_max"] = own.reindex(pd.MultiIndex.from_arrays([de["partner_id"], de["cls"]])).to_numpy()
+    de = de.sort_values(["chunk", "view", "slot", "_row"]).reset_index(drop=True)
+    tp_all = de[IOUS].to_numpy(dtype=bool)
+    de["run"], im["run"] = run, run
+    dets_out = de[["run", "pair_id", "patient_id", "view", "cls", "conf", "own_max", "partner_max", "tp50"]].copy()
+    imgs_out = im[["run", "pair_id", "patient_id", "view", "cls", "own_max", "partner_max", "present", "n_boxes"]].copy()
+    return dets_out, imgs_out, tp_all, len(pairs)
 
 
 def analyse(dets, imgs, tp_all, classes, gate_idx, args):
@@ -196,31 +242,42 @@ def main() -> int:
           f"bootstrap {args.boot}")
     if args.split == "test":
         record = {"opened_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                  "commit": utils.git_commit(), "script": "04_premise_test.py",
+                  "commit": utils.git_commit(),
+                  "script": "04_premise_test.py" + (f" --from-pred {args.from_pred}" if args.from_pred else ""),
                   "runs": [Path(w).parent.parent.name for w in args.weights] if args.weights else args.runs,
                   "smoke": bool(args.limit) or imgsz != int(cfg["train"]["imgsz"])}
         (out / "TEST_OPENED.json").write_text(json.dumps(record, indent=2))
         print(f"TEST SPLIT OPENED: {record}")
 
-    index = pr.read_index(ix.locate_index(data, args.index))
-    pairs = pr.build_pairs(index, classes)
-    if args.limit:
-        keep = pairs[pairs["split"] == args.split].sort_values("pair_id").head(args.limit)["pair_id"]
-        pairs = pairs[pairs["pair_id"].isin(keep)]
-    ds = vd.PairDataset(pairs, index, args.split, classes, imgsz, augment=False, list_dir=out / "lists")
-    loader = vd.build_pair_loader(ds, args.pairs, shuffle=False, workers=args.workers)
-    print(f"{len(ds)} {args.split} pairs ({2 * len(ds)} images)")
-
     runs = args.runs if not args.weights else [Path(w).parent.parent.name for w in args.weights]
+    if args.from_pred:
+        pred = Path(args.from_pred)
+        print(f"inputs from the I1 tables in {pred} (no detector is run here)")
+    else:
+        index = pr.read_index(ix.locate_index(data, args.index))
+        pairs = pr.build_pairs(index, classes)
+        if args.limit:
+            keep = pairs[pairs["split"] == args.split].sort_values("pair_id").head(args.limit)["pair_id"]
+            pairs = pairs[pairs["pair_id"].isin(keep)]
+        ds = vd.PairDataset(pairs, index, args.split, classes, imgsz, augment=False, list_dir=out / "lists")
+        loader = vd.build_pair_loader(ds, args.pairs, shuffle=False, workers=args.workers)
+        print(f"{len(ds)} {args.split} pairs ({2 * len(ds)} images)")
+
     all_rows, verdict = [], None
     for i, run in enumerate(runs):
-        w = Path(args.weights[i]) if args.weights else weights_for(run, args.search)
-        model, _ = load_checkpoint(str(w), device="cpu")
-        model = model.to(dev).eval()
-        model = model.half() if dev.type == "cuda" else model.float()
         t0 = time.time()
-        dets, imgs, tp_all = infer(model, loader, ds.pairs, classes, imgsz, dev, args, run)
-        print(f"\n{run}: {w} | {len(dets):,} detections in {time.time() - t0:.0f} s")
+        if args.from_pred:
+            w = pred / run
+            dets, imgs, tp_all, n_pairs = tables_from_predictions(pred, run, args.split, args.limit, args.pairs)
+            print(f"\n{run}: I1 tables {w} | {n_pairs} pairs | {len(dets):,} detections")
+            model = None
+        else:
+            w = Path(args.weights[i]) if args.weights else weights_for(run, args.search)
+            model, _ = load_checkpoint(str(w), device="cpu")
+            model = model.to(dev).eval()
+            model = model.half() if dev.type == "cuda" else model.float()
+            dets, imgs, tp_all = infer(model, loader, ds.pairs, classes, imgsz, dev, args, run)
+            print(f"\n{run}: {w} | {len(dets):,} detections in {time.time() - t0:.0f} s")
         dets.to_csv(out / f"detections_{run}.csv.gz", index=False)
         imgs.to_csv(out / f"images_{run}.csv.gz", index=False)
         rows = analyse(dets, imgs, tp_all, classes, gate_idx, args)

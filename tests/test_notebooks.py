@@ -1,14 +1,19 @@
-"""The evaluation notebook stops on any failure and never runs a step without the run check."""
+"""The evaluation notebook stops on any failure and never runs a step without the run check; the training notebook
+starts the right commands (smoke or auto-resume, the protocol batch fallback), downloads every pretrained file first
+and reports each run."""
 
 import ast
 import json
 from pathlib import Path
 
+import pytest
+
 NB = Path(__file__).resolve().parents[1] / "notebooks" / "kaggle_eval.ipynb"
+NB_TRAIN = NB.parent / "kaggle_train.ipynb"
 
 
-def cells():
-    return ["".join(c["source"]) for c in json.loads(NB.read_text(encoding="utf-8"))["cells"] if c["cell_type"] == "code"]
+def cells(nb=NB):
+    return ["".join(c["source"]) for c in json.loads(nb.read_text(encoding="utf-8"))["cells"] if c["cell_type"] == "code"]
 
 
 def test_settings_define_everything_the_steps_use():
@@ -52,3 +57,105 @@ def test_hash_check_blocks_only_the_test_session():
     check = cells()[2]
     assert "final_weights.json" in check and "sha256(" in check
     assert check.count("(problems if OPEN_TEST else warnings)") == 2  # unfinished run, wrong weights
+
+
+# ---------- training notebook -----------------------------------------------------------------
+
+def train_settings(**change):
+    ns = {}
+    exec(cells(NB_TRAIN)[0], ns)
+    ns.update(change)
+    return ns
+
+
+def test_training_settings_are_notebook_d():
+    from vgra import utils
+
+    ns = train_settings()
+    assert ns["REF"] == "detectors-v4" and ns["SMOKE"] is True and ns["BATCH"] == {}
+    assert [(c, s) for c, s, _ in ns["RUNS"]] == [("configs/RD.yaml", 0), ("configs/FR.yaml", 0)]
+    assert sorted(g for _, _, g in ns["RUNS"]) == [0, 1]  # one run per GPU
+    summary = cells(NB_TRAIN)[4]
+    fallback = ast.literal_eval(summary.split("FALLBACK = ")[1].split("  #")[0])
+    for exp, b in fallback.items():  # protocol 11.3: half the configured batch
+        assert b * 2 == utils.load_config(NB.parents[1] / "configs" / f"{exp}.yaml")["train"]["batch"]
+
+
+def test_weights_cell_downloads_every_pretrained_file():
+    from vgra import utils
+
+    weights = cells(NB_TRAIN)[2]
+    assert "yolo26n.pt" in weights  # Ultralytics AMP check
+    for f in sorted((NB.parents[1] / "configs").glob("*.yaml")):
+        if f.name == "base.yaml":
+            continue
+        m = utils.load_config(f)["model"]
+        assert (m["weights"] if m.get("kind", "yolo") != "frcnn" else "COCO_V1.get_state_dict") in weights, f.name
+
+
+@pytest.mark.parametrize("smoke,batch", [(True, {}), (False, {}), (False, {"FR": 2}), (True, {"RD": 4})])
+def test_training_commands(tmp_path, monkeypatch, smoke, batch):
+    import subprocess
+    import time
+
+    calls = []
+
+    class FakePopen:
+        def __init__(self, cmd, stdout=None, stderr=None):
+            calls.append(cmd)
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    ns = train_settings(SMOKE=smoke, BATCH=batch)
+    exec(cells(NB_TRAIN)[3].replace("/kaggle/working", str(tmp_path)), ns)
+    assert len(calls) == 2
+    for cmd, (cfg, seed, gpu) in zip(calls, ns["RUNS"]):
+        exp = Path(cfg).stem
+        assert cmd[1:8] == ["scripts/03_train_detector.py", "--config", cfg, "--seed", str(seed), "--device", str(gpu)]
+        assert ("--smoke" in cmd) == smoke and ("--auto-resume" in cmd) == (not smoke)
+        assert (cmd[-2:] == ["--batch", str(batch[exp])]) if exp in batch else "--batch" not in cmd
+    logs = sorted(p.name for p in (tmp_path / "logs").iterdir())
+    assert all(("_smoke_" in n) == smoke for n in logs) and len(logs) == 2
+
+
+def _summary(tmp_path, capsys, **change):
+    ns = train_settings(**change)
+    ns["os"] = __import__("os")
+    exec(cells(NB_TRAIN)[4].replace("/kaggle/working", str(tmp_path)), ns)
+    return capsys.readouterr().out
+
+
+def _run(tmp_path, folder, **metrics):
+    (tmp_path / "runs" / folder).mkdir(parents=True)
+    (tmp_path / "runs" / folder / "metrics.json").write_text(json.dumps(metrics))
+
+
+def test_training_summary_smoke(tmp_path, capsys):
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "logs" / "RD_s0_smoke_20261124-0900.log").write_text(
+        "RUN STATUS: FINISHED after 1 epochs\n\n=== timing (smoke run) ===\nestimated full epoch on 14000 images: "
+        "21.0 min training + 2.0 min validation\npeak GPU memory: 9.1 GB\n")
+    _run(tmp_path, "RD_s0_smoke640", batch=8, epochs_total=1, finished=True, valid={"map50": 0.1, "map50_95": 0.05})
+    (tmp_path / "logs" / "FR_s0_smoke_20261124-0901.log").write_text(
+        "Traceback ...\ntorch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.2 GiB\n")
+    out = _summary(tmp_path, capsys)
+    assert "RD_s0: SMOKE RUN DONE | batch 8" in out and "peak GPU memory: 9.1 GB" in out
+    assert "FR_s0: OUT OF MEMORY with the configured batch" in out and '"FR": 2 to BATCH' in out
+    out = _summary(tmp_path, capsys, BATCH={"FR": 2})
+    assert "FR_s0: OUT OF MEMORY at batch 2. No further fallback" in out
+
+
+def test_training_summary_full_runs(tmp_path, capsys):
+    (tmp_path / "logs").mkdir()
+    for n in ("RD_s0", "FR_s0"):
+        (tmp_path / "logs" / f"{n}_20261124-0900.log").write_text("line\n" * 30 + "last line\n")
+    _run(tmp_path, "RD_s0", batch=8, epochs_total=72, finished=True, valid={"map50": 0.6, "map50_95": 0.4})
+    out = _summary(tmp_path, capsys, SMOKE=False)
+    assert "RD_s0: FINISHED | batch 8 | epochs 72" in out
+    assert "FR_s0: no metrics.json" in out and "last line" in out
+    _run(tmp_path, "FR_s0", batch=4, epochs_total=9, finished=False, valid={"map50": 0.5, "map50_95": 0.3})
+    out = _summary(tmp_path, capsys, SMOKE=False)
+    assert "FR_s0: STOPPED FOR TIME (attach this output, run the next version) | batch 4 | epochs 9" in out

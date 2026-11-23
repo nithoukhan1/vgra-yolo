@@ -1,5 +1,15 @@
 """STEP-03: train a single-view detector (B0 = YOLO11s, B1 = YOLO11s + SCC, V8 = YOLOv8s,
-V8R = YOLOv8s + ResCBAM of Ju et al.).
+V8R = YOLOv8s + ResCBAM of Ju et al.; extension detectors of protocol amendment v1.2, section 11.3:
+RD = RT-DETR-l with the Ultralytics RT-DETR trainer (vgra/rtdetr.py: validator mask fix), FR = Faster R-CNN R50-FPN v2
+with vgra/frcnn.py).
+The detector family comes from model.kind in the config (yolo | rtdetr | frcnn); every option below works for all.
+
+Check an extension detector (no training):
+    python scripts/03_train_detector.py --config configs/RD.yaml --check
+    python scripts/03_train_detector.py --config configs/FR.yaml --check
+
+Pre-specified batch fallback (protocol 11.3: only if the configured batch runs out of memory in the first epoch):
+    python scripts/03_train_detector.py --config configs/RD.yaml --seed 0 --device 0 --auto-resume --batch 4
 
 Check the ResCBAM model (no training):
     python scripts/03_train_detector.py --config configs/V8R.yaml --check
@@ -48,7 +58,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # train arguments that are passed from the config to Ultralytics as they are
 PASS_THROUGH = ("epochs", "batch", "patience", "optimizer", "lr0", "cos_lr", "workers", "close_mosaic",
-                "warmup_epochs", "amp", "cache")
+                "warmup_epochs", "amp", "cache", "weight_decay", "warmup_bias_lr")
 
 
 def parse_args() -> argparse.Namespace:
@@ -74,6 +84,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--root", default=None, help="override data.root")
     ap.add_argument("--out", default=None, help="override out_dir")
     ap.add_argument("--weights", default=None, help="override model.weights")
+    ap.add_argument("--batch", type=int, default=None,
+                    help="override train.batch (protocol 11.3 fallback after an out-of-memory first epoch)")
     return ap.parse_args()
 
 
@@ -168,6 +180,71 @@ def check_rescbam(weights: str, n_classes: int) -> bool:
     return ok_all
 
 
+def check_rtdetr(weights: str, n_classes: int) -> bool:
+    """RT-DETR-l: the COCO checkpoint loads, a 9-class model takes every tensor but the class layers, and the
+    evaluation output is (images, 300 queries, 4 boxes + classes)."""
+    import torch
+    from ultralytics.nn.tasks import RTDETRDetectionModel, load_checkpoint
+
+    from vgra.model import count_parameters
+
+    stock, _ = load_checkpoint(weights, device="cpu")
+    ours = RTDETRDetectionModel(stock.yaml, nc=n_classes, verbose=False)
+    csd, osd = stock.float().state_dict(), ours.state_dict()
+    shared = [k for k in osd if k in csd and csd[k].shape == osd[k].shape]
+    not_shared = [k for k in osd if k not in shared]
+    class_layers = all(("score_head" in k) or ("denoising_class_embed" in k) for k in not_shared)
+    ours.load(stock, verbose=False)
+    copied = all(torch.equal(ours.state_dict()[k], csd[k]) for k in shared)
+    ours.eval()
+    with torch.no_grad():
+        y = ours(torch.rand(1, 3, 640, 640))[0]
+    n0, n1 = count_parameters(stock), count_parameters(ours)
+    checks = [("COCO checkpoint loads", n0 > 0, f"{n0:,} parameters (80 classes)"),
+              ("pretrained tensors copied", copied and class_layers,
+               f"{len(shared)}/{len(osd)}, not copied: {len(not_shared)} class-layer tensors"),
+              ("evaluation output (1, 300, 4 + classes)", tuple(y.shape) == (1, 300, 4 + n_classes), str(tuple(y.shape)))]
+    print(f"weights: {weights} | RT-DETR-l with {n_classes} classes: {n1:,} parameters")
+    ok_all = True
+    for name, ok, detail in checks:
+        ok_all = ok_all and ok
+        print(f"[{'ok' if ok else 'FAIL'}] {name}" + (f" ({detail})" if detail else ""))
+    print("RTDETR CHECK: PASS" if ok_all else "RTDETR CHECK: FAIL")
+    return ok_all
+
+
+def check_frcnn(cfg: dict, n_classes: int, weights: str | None) -> bool:
+    """Faster R-CNN: the model builds with a 10-way box predictor, trains one step and predicts on a dummy image."""
+    import torch
+
+    from vgra import frcnn
+
+    meta = frcnn.model_meta(cfg, n_classes)
+    model = frcnn.build_model(n_classes, weights, 256, meta["score_thresh"], meta["nms_iou"], meta["max_det"])
+    x = [torch.rand(3, 256, 200)]
+    t = [{"boxes": torch.tensor([[20.0, 30.0, 120.0, 140.0]]), "labels": torch.tensor([4])}]
+    model.train()
+    losses = model(x, t)
+    model.eval()
+    with torch.no_grad():
+        out = model(x)[0]
+    checks = [("box predictor = classes + background", model.roi_heads.box_predictor.cls_score.out_features == n_classes + 1,
+               str(model.roi_heads.box_predictor.cls_score.out_features)),
+              ("training step gives the 4 losses", set(losses) == set(frcnn.LOSS_KEYS), ", ".join(sorted(losses))),
+              ("prediction keys", {"boxes", "labels", "scores"} <= set(out), f"{len(out['scores'])} detections"),
+              ("inference settings", (model.roi_heads.score_thresh, model.roi_heads.nms_thresh,
+                                      model.roi_heads.detections_per_img) == (meta["score_thresh"], meta["nms_iou"],
+                                                                              meta["max_det"]), "")]
+    print(f"weights: {weights or 'random (no download)'} | Faster R-CNN R50-FPN v2: {frcnn.count_parameters(model):,} "
+          f"parameters")
+    ok_all = True
+    for name, ok, detail in checks:
+        ok_all = ok_all and ok
+        print(f"[{'ok' if ok else 'FAIL'}] {name}" + (f" ({detail})" if detail else ""))
+    print("FRCNN CHECK: PASS" if ok_all else "FRCNN CHECK: FAIL")
+    return ok_all
+
+
 def summarise(m) -> dict:
     """Overall and per-class numbers from an Ultralytics detection metrics object."""
     box, names = m.box, m.names
@@ -180,13 +257,68 @@ def summarise(m) -> dict:
             "classes_evaluated": len(per_class), "per_class": per_class}
 
 
-def evaluate(weights: Path, data_yaml: Path, split: str, imgsz: int, batch: int, device: str, save_dir: Path) -> dict:
-    """Validate saved weights on one split."""
-    from ultralytics import YOLO
+def evaluate(weights: Path, data_yaml: Path, split: str, imgsz: int, batch: int, device: str, save_dir: Path,
+             kind: str = "yolo") -> dict:
+    """Validate saved Ultralytics weights on one split (YOLO or RT-DETR validator)."""
+    from ultralytics import RTDETR, YOLO
 
-    return summarise(YOLO(str(weights)).val(
+    extra = {}
+    if kind == "rtdetr":
+        from vgra.rtdetr import RDValidator
+
+        extra["validator"] = RDValidator  # the 8.4.7 validator with its confidence mask aligned (vgra/rtdetr.py)
+    model = RTDETR(str(weights)) if kind == "rtdetr" else YOLO(str(weights))
+    return summarise(model.val(
         data=str(data_yaml), split=split, imgsz=imgsz, batch=batch, device=device, plots=False, verbose=False,
-        project=str(save_dir), name=f"eval_{split}", exist_ok=True))
+        project=str(save_dir), name=f"eval_{split}", exist_ok=True, **extra))
+
+
+def train_frcnn(args, cfg: dict, index, run_dir: Path, name: str, train_set: str, n_train_full: int, imgsz) -> int:
+    """FR (Faster R-CNN): same lists, run folder, time budget and resume rules as the Ultralytics detectors."""
+    from vgra import frcnn, infer, lists, utils
+    from vgra.runs import TimeBudget
+
+    if int(imgsz) != int(cfg["train"]["imgsz"]):
+        cfg["train"]["imgsz"] = int(imgsz)
+    if args.weights:  # e.g. COCO_V1, or none = random weights (tests; nothing is downloaded)
+        cfg["model"]["weights"] = None if args.weights.lower() == "none" else args.weights
+    info_path = utils.write_run_info(run_dir, cfg, args.seed)
+    print(f"run folder: {run_dir} | run info: {info_path.name}")
+    train_cfg = cfg["train"]
+    max_hours = args.max_hours if args.max_hours is not None else (None if args.smoke else train_cfg.get("max_hours"))
+    reserve = args.reserve_min if args.reserve_min is not None else train_cfg.get("reserve_minutes", 20)
+    budget = TimeBudget(max_hours, reserve, start=T_START) if max_hours else None
+    if budget:
+        print(f"time budget: {max_hours} h from the start of this script; the run stops cleanly after the "
+              f"last epoch that fits (reserve {reserve} min) and can be continued with --auto-resume")
+    label_of = dict(zip(index["path"], index["label_path"]))
+    train_paths = lists.train_image_paths(index, train_set)
+    valid = index[(index["split"] == "valid") & index["is_base"] & index["in_metadata"]].sort_values("path")
+    metrics = frcnn.train_run(
+        cfg, run_dir, train_paths, [label_of[p] for p in train_paths], list(valid["path"]), list(valid["label_path"]),
+        infer.image_info(index), int(args.seed), str(args.device), args.batch, bool(args.smoke), float(args.fraction),
+        args.resume, budget, int(train_cfg.get("workers", 4)), n_train_full=n_train_full)
+    if args.test and metrics["finished"]:
+        import torch
+
+        test = index[(index["split"] == "test") & index["is_base"] & index["in_metadata"]].sort_values("path")
+        dev = torch.device("cpu" if str(args.device) == "cpu" else f"cuda:{args.device}")
+        model, _ = frcnn.load_model(run_dir / "weights" / "best.pt", dev)
+        ds = frcnn.FrcnnDataset(list(test["path"]), list(test["label_path"]), int(train_cfg["imgsz"]))
+        dets, imgs, tp = frcnn.predict(model, frcnn.make_loader(ds, metrics["batch"], False, 2), cfg["data"]["classes"],
+                                       infer.image_info(index), dev)
+        metrics["test"] = frcnn.summarise_tables(dets, imgs, tp, cfg["data"]["classes"])
+        (run_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    v = metrics.get("valid") or {"map50": float("nan"), "map50_95": float("nan"), "classes_evaluated": 0, "per_class": {}}
+    print(f"\n=== {name} ===")
+    print(f"valid mAP50 {v['map50']:.4f} | mAP50-95 {v['map50_95']:.4f} | classes evaluated {v['classes_evaluated']} "
+          f"| best epoch {metrics['best_epoch']}")
+    for c, r in v["per_class"].items():
+        print(f"  {c:<20} AP50 {r['ap50']:.4f}  AP50-95 {r['ap50_95']:.4f}")
+    print(f"wrote {run_dir / 'metrics.json'}")
+    print(f"RUN STATUS: {'FINISHED' if metrics['finished'] else 'STOPPED FOR TIME'} after {metrics['epochs_total']} "
+          f"epochs (this session {metrics['epochs_this_session']})")
+    return 0
 
 
 def main() -> int:
@@ -202,9 +334,18 @@ def main() -> int:
     weights = args.weights or model_cfg["weights"]
     use_scc = bool(model_cfg["scc"])
     use_rescbam = bool(model_cfg.get("rescbam", False))
-    print(f"repo commit: {utils.git_commit()} | config: {cfg['exp_id']} | scc: {use_scc} | rescbam: {use_rescbam}")
+    kind = model_cfg.get("kind", "yolo")
+    if kind not in ("yolo", "rtdetr", "frcnn"):
+        raise SystemExit(f"model.kind must be yolo, rtdetr or frcnn, not {kind!r}")
+    print(f"repo commit: {utils.git_commit()} | config: {cfg['exp_id']} | kind: {kind} | scc: {use_scc} | "
+          f"rescbam: {use_rescbam}")
 
     if args.check:
+        if kind == "rtdetr":
+            return 0 if check_rtdetr(weights, len(data["classes"])) else 1
+        if kind == "frcnn":
+            w = None if (args.weights or "none").lower() == "none" else args.weights
+            return 0 if check_frcnn(cfg, len(data["classes"]), w) else 1
         if use_rescbam:
             return 0 if check_rescbam(weights, len(data["classes"])) else 1
         if not use_scc:
@@ -252,6 +393,9 @@ def main() -> int:
               f"= {w['bytes'] / 1e6 / max(w['seconds'], 1e-9):.0f} MB/s, {w['files'] / max(w['seconds'], 1e-9):.0f} files/s, "
               f"errors {w['errors']} | RAM total {mem.total / 1e9:.1f} GB, available {mem.available / 1e9:.1f} GB")
 
+    if kind == "frcnn":
+        return train_frcnn(args, cfg, index, out_root / name, name, train_set, n_train_full, imgsz)
+
     from vgra.model import count_parameters, make_trainer
     from vgra.scc import scc_strengths
 
@@ -264,10 +408,17 @@ def main() -> int:
                          project=str(out_root), name=name, exist_ok=True, device=args.device, plots=not args.smoke)
         if args.cache:
             overrides["cache"] = args.cache
+        if args.batch:
+            overrides["batch"] = int(args.batch)
         if args.smoke:
             overrides.update(epochs=1, fraction=float(args.fraction), patience=0)
 
-    trainer = make_trainer(use_scc, rescbam=use_rescbam)(overrides=overrides)
+    if kind == "rtdetr":
+        from vgra.rtdetr import RDTrainer  # stock RT-DETR trainer; validator mask fix only (vgra/rtdetr.py)
+
+        trainer = RDTrainer(overrides=overrides)
+    else:
+        trainer = make_trainer(use_scc, rescbam=use_rescbam)(overrides=overrides)
     run_dir = Path(trainer.save_dir)
     info_path = utils.write_run_info(run_dir, cfg, args.seed)
     print(f"run folder: {run_dir} | run info: {info_path.name}")
@@ -347,13 +498,13 @@ def main() -> int:
     if finished and not args.smoke:
         (run_dir / "weights" / "resume.pt").unlink(missing_ok=True)  # not needed once the run is complete
     metrics = {
-        "run_name": name, "exp_id": cfg["exp_id"], "seed": int(args.seed), "commit": utils.git_commit(),
+        "run_name": name, "exp_id": cfg["exp_id"], "kind": kind, "seed": int(args.seed), "commit": utils.git_commit(),
         "finished": finished, "stopped_for_time": not finished, "max_hours": max_hours,
         "scc": use_scc, "rescbam": use_rescbam, "imgsz": int(trainer.args.imgsz), "train_set": train_set,
         "epochs_this_session": len(clock["train"]), "epochs_total": epochs_total, "total_seconds": round(total_s),
         "setup_seconds": round(clock.get("setup", 0.0)), "cache": str(trainer.args.cache),
         "train_seconds_per_epoch": round(sum(clock["train"]) / max(len(clock["train"]), 1), 1),
-        "parameters": count_parameters(trainer.model),
+        "parameters": count_parameters(trainer.model), "batch": batch,
         "scc_strength": {k: round(v, 6) for k, v in scc_strengths(
             trainer.ema.ema if getattr(trainer, "ema", None) else trainer.model).items()},
         "weights": final.name,
@@ -364,9 +515,9 @@ def main() -> int:
     if best.exists() and final_metrics is not None and len(getattr(final_metrics.box, "ap_class_index", [])):
         metrics["valid"] = summarise(final_metrics)
     else:
-        metrics["valid"] = evaluate(final, data_yaml, "val", int(trainer.args.imgsz), batch, device, run_dir)
+        metrics["valid"] = evaluate(final, data_yaml, "val", int(trainer.args.imgsz), batch, device, run_dir, kind)
     if args.test:
-        metrics["test"] = evaluate(final, data_yaml, "test", int(trainer.args.imgsz), batch, device, run_dir)
+        metrics["test"] = evaluate(final, data_yaml, "test", int(trainer.args.imgsz), batch, device, run_dir, kind)
     with open(run_dir / "metrics.json", "w", encoding="utf-8") as f:
         json.dump(metrics, f, indent=2)
 

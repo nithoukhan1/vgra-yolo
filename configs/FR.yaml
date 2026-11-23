@@ -1,0 +1,25 @@
+# FR: Faster R-CNN ResNet-50 FPN v2 (two-stage, torchvision), extension detector.
+# Recipe = protocol amendment v1.2, section 11.3 (torchvision reference recipe, 2x schedule); code: vgra/frcnn.py.
+model:
+  kind: frcnn
+  weights: COCO_V1       # torchvision FasterRCNN_ResNet50_FPN_V2_Weights.COCO_V1; box predictor replaced (9 classes + background)
+  scc: false
+  vgra: "off"
+train:
+  imgsz: 1024            # longer side (min_size = max_size = 1024), aspect ratio kept, no letterbox
+  epochs: 24
+  batch: 4               # 2 if 4 runs out of memory in the first epoch; the learning rate scales with the batch
+  optimizer: SGD
+  lr0: 0.005             # at batch 4 (torchvision reference: 0.02 at batch 16)
+  momentum: 0.9
+  weight_decay: 0.0001
+  warmup_iters: 1000     # linear warm-up from 0.001 x lr0
+  lr_steps: [16, 22]     # learning rate x 0.1 at these epochs
+  lr_gamma: 0.1
+  hflip: 0.5
+  amp: true
+  patience: null         # no early stopping: best epoch on valid (0.1 mAP50 + 0.9 mAP50-95)
+frcnn:
+  score_thresh: 0.001
+  nms_iou: 0.5
+  max_det: 300

@@ -11,7 +11,9 @@ model and choice is fixed). Opening it writes TEST_OPENED.json with the time, co
     python scripts/10_predict.py --runs B0_s0 B0_s1 B0_s2 B1_s0 V8_s0 V8_s1 --split test --open-test
 
 Settings follow Ultralytics validation and the protocol: square letterbox at the training image size,
-NMS conf 0.001, IoU 0.7, max 300 boxes, multi-label (vgra/infer.py).
+NMS conf 0.001, IoU 0.7, max 300 boxes, multi-label (vgra/infer.py). The detector family and image size of a run
+come from its config (configs/<run prefix>.yaml, model.kind): RT-DETR as the Ultralytics RT-DETR validator
+(vgra/infer.py predict_rtdetr), Faster R-CNN as vgra/frcnn.py (protocol amendment v1.2, section 11.3).
 
 Writes to <out_dir>/predictions/:
     pairs_<split>.csv                 the PA + LAT pairs of the split with subgroup columns
@@ -69,6 +71,17 @@ def weights_for(run: str, search: str) -> Path:
     return best
 
 
+def run_config(run: str) -> dict:
+    """Config of a run from its name (<exp_id>_s<seed>), e.g. RD_s0 -> configs/RD.yaml."""
+    from vgra import utils
+
+    exp_id = run.rsplit("_s", 1)[0]
+    path = REPO_ROOT / "configs" / f"{exp_id}.yaml"
+    if not path.is_file():
+        return utils.load_config(REPO_ROOT / "configs" / "base.yaml")  # unknown prefix (tests): base settings
+    return utils.load_config(path)
+
+
 def main() -> int:
     args = parse_args()
     if args.split == "test" and not args.open_test:
@@ -91,18 +104,21 @@ def main() -> int:
     if args.root:
         data["root"] = args.root
     classes = list(data["classes"])
-    imgsz = int(args.imgsz or cfg["train"]["imgsz"])
+    run_cfgs = {run: run_config(run) for run in args.runs}
+    kinds = {run: c["model"].get("kind", "yolo") for run, c in run_cfgs.items()}
+    sizes = {run: int(args.imgsz or c["train"]["imgsz"]) for run, c in run_cfgs.items()}
     dev = torch.device(args.device or ("cuda:0" if torch.cuda.is_available() else "cpu"))
     out = Path(args.out or cfg["out_dir"]) / "predictions"
     out.mkdir(parents=True, exist_ok=True)
-    smoke = bool(args.limit) or imgsz != int(cfg["train"]["imgsz"])
+    smoke = bool(args.limit) or any(sizes[r] != int(run_cfgs[r]["train"]["imgsz"]) for r in args.runs)
     commit = utils.git_commit()
-    print(f"repo commit: {commit} | split: {args.split} | image size {imgsz} | device {dev}"
+    print(f"repo commit: {commit} | split: {args.split} | device {dev} | "
+          + ", ".join(f"{r}: {kinds[r]} {sizes[r]}" for r in args.runs)
           + (" | SMOKE TEST (not for the paper)" if smoke else ""))
 
     if args.split == "test":
         record = {"opened_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "commit": commit,
-                  "runs": args.runs, "smoke": smoke}
+                  "runs": args.runs, "smoke": smoke, "kinds": kinds}
         (out / "TEST_OPENED.json").write_text(json.dumps(record, indent=2))
         print(f"TEST SPLIT OPENED: {record}")
 
@@ -125,17 +141,44 @@ def main() -> int:
     if not args.no_warm:
         w = lists.warm_files(list(rows["path"]) + list(rows["label_path"]))
         print(f"read {w['files']:,} files ({w['bytes'] / 1e9:.1f} GB) in {w['seconds'] / 60:.1f} min")
-    ds = infer.image_dataset(paths, classes, imgsz, out / "lists" / f"{args.split}.txt", augment=False)
+    datasets = {}
+
+    def dataset(kind: str, size: int):
+        """One dataset per detector family and image size, built when first needed."""
+        if (kind, size) not in datasets:
+            if kind == "frcnn":
+                from vgra import frcnn
+
+                datasets[(kind, size)] = frcnn.FrcnnDataset(paths, list(rows["label_path"]), size)
+            elif kind == "rtdetr":
+                datasets[(kind, size)] = infer.rtdetr_dataset(paths, classes, size,
+                                                              out / "lists" / f"{args.split}_rtdetr{size}.txt")
+            else:
+                datasets[(kind, size)] = infer.image_dataset(paths, classes, size, out / "lists" / f"{args.split}.txt",
+                                                             augment=False)
+        return datasets[(kind, size)]
 
     for k, run in enumerate(args.runs):
         t0 = time.time()
+        kind, imgsz = kinds[run], sizes[run]
         weights = Path(args.weights[k]) if args.weights else weights_for(run, args.search)
-        model, _ = load_checkpoint(str(weights), device="cpu")
-        model = model.to(dev).eval()
-        model = model.half() if dev.type == "cuda" else model.float()
-        loader = infer.image_loader(ds, args.batch, workers=args.workers)
-        dets, imgs, tp = infer.predict(model, loader, classes, imgsz, info, args.conf, args.iou, args.max_det,
-                                       device=dev)
+        ds = dataset(kind, imgsz)
+        if kind == "frcnn":
+            from vgra import frcnn
+
+            model, _ = frcnn.load_model(weights, dev)
+            loader = frcnn.make_loader(ds, args.batch, shuffle=False, workers=args.workers)
+            dets, imgs, tp = frcnn.predict(model, loader, classes, info, dev, amp=dev.type == "cuda")
+        else:
+            model, _ = load_checkpoint(str(weights), device="cpu")
+            model = model.to(dev).eval()
+            model = model.half() if dev.type == "cuda" else model.float()
+            loader = infer.image_loader(ds, args.batch, workers=args.workers)
+            if kind == "rtdetr":
+                dets, imgs, tp = infer.predict_rtdetr(model, loader, classes, imgsz, info, args.conf, device=dev)
+            else:
+                dets, imgs, tp = infer.predict(model, loader, classes, imgsz, info, args.conf, args.iou, args.max_det,
+                                               device=dev)
         for j, name in enumerate(IOUS):
             dets[name] = tp[:, j] if len(tp) else []
         folder = out / run
@@ -153,8 +196,8 @@ def main() -> int:
         done = {k2: v for k2, v in per_class.items()}
         m50 = float(np.mean([v["ap50"] for v in done.values()])) if done else float("nan")
         m = float(np.mean([v["ap50_95"] for v in done.values()])) if done else float("nan")
-        run_info = {"run": run, "weights": str(weights), "split": args.split, "commit": commit, "smoke": smoke,
-                    "imgsz": imgsz, "conf": args.conf, "iou": args.iou, "max_det": args.max_det,
+        run_info = {"run": run, "kind": kind, "weights": str(weights), "split": args.split, "commit": commit,
+                    "smoke": smoke, "imgsz": imgsz, "conf": args.conf, "iou": args.iou, "max_det": args.max_det,
                     "images": len(paths), "pairs": len(pairs), "detections": len(dets),
                     "map50": round(m50, 4), "map50_95": round(m, 4), "per_class": per_class,
                     "seconds": round(time.time() - t0, 1)}

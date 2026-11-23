@@ -1,0 +1,18 @@
+# RD: RT-DETR-l (transformer, Ultralytics 8.4.7), extension detector. Recipe = protocol amendment v1.2, section 11.3.
+# Differs from the common YOLO recipe: input 640 (RT-DETR-l needs 275 GFLOPs at 1024), AdamW 1e-4, 72 epochs,
+# warm-up from 0 for every parameter group (the Ultralytics default warmup_bias_lr 0.1 is 1,000x lr0).
+model:
+  kind: rtdetr
+  weights: rtdetr-l.pt
+  scc: false
+  vgra: "off"
+train:
+  imgsz: 640
+  epochs: 72
+  patience: 50
+  batch: 8               # 4 if 8 runs out of memory in the first epoch (protocol 11.3)
+  optimizer: AdamW
+  lr0: 0.0001
+  weight_decay: 0.0001
+  warmup_epochs: 3
+  warmup_bias_lr: 0.0

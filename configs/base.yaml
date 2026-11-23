@@ -65,6 +65,7 @@ data:
     - boneanomaly
 
 model:
+  kind: yolo           # yolo (Ultralytics YOLO) | rtdetr (Ultralytics RT-DETR) | frcnn (torchvision Faster R-CNN)
   weights: yolo11s.pt
   scc: true            # SCC adapters in backbone layers 2 and 4
   vgra: "off"          # off | oracle | learned

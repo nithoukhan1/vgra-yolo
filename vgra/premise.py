@@ -188,3 +188,26 @@ def ap_of(tp: np.ndarray, conf: np.ndarray, n_targets: int) -> tuple[float, floa
     out = ap_per_class(tp, np.asarray(conf), np.zeros(len(conf)), np.zeros(n_targets))
     ap = out[5]
     return float(ap[0, 0]), float(ap[0].mean())
+
+
+def summarise_detections(tp: np.ndarray, conf, pred_cls, target_cls, names: list) -> dict:
+    """Overall and per-class numbers exactly as the Ultralytics validator computes them (ap_per_class over all
+    detections of a split; precision and recall at the confidence with the best mean F1), in the format of
+    scripts/03_train_detector.summarise. Used for detectors outside Ultralytics (Faster R-CNN)."""
+    from ultralytics.utils.metrics import ap_per_class
+
+    conf, pred_cls, target_cls = np.asarray(conf, dtype=float), np.asarray(pred_cls), np.asarray(target_cls)
+    if len(target_cls) == 0:
+        return {"map50": 0.0, "map50_95": 0.0, "precision": 0.0, "recall": 0.0, "classes_evaluated": 0, "per_class": {}}
+    if len(conf) == 0:
+        tp, conf, pred_cls = np.zeros((0, 10), dtype=bool), np.zeros(0), np.zeros(0)
+    _, _, p, r, _, ap, ap_class = ap_per_class(np.asarray(tp), conf, pred_cls, target_cls,
+                                                names={i: n for i, n in enumerate(names)})[:7]
+    per_class = {names[int(c)]: {"ap50": round(float(ap[j, 0]), 4), "ap50_95": round(float(ap[j].mean()), 4),
+                                 "precision": round(float(p[j]), 4), "recall": round(float(r[j]), 4)}
+                 for j, c in enumerate(ap_class)}
+    return {"map50": round(float(ap[:, 0].mean()), 4) if len(ap) else 0.0,
+            "map50_95": round(float(ap.mean()), 4) if len(ap) else 0.0,
+            "precision": round(float(p.mean()), 4) if len(p) else 0.0,
+            "recall": round(float(r.mean()), 4) if len(r) else 0.0,
+            "classes_evaluated": len(per_class), "per_class": per_class}

@@ -24,7 +24,9 @@ The check cell must end with `SETUP CHECK: PASS` and all tests passing.
 Kaggle "Save Version" runs stop after 12 hours, so one training runs as several versions of the
 same notebook. Use `notebooks/kaggle_train.ipynb`, one notebook per Kaggle account:
 
-1. Set `REF` to the fixed code tag (e.g. `detectors-v1`) and `RUNS` to at most two runs, one per GPU.
+1. Set `REF` to the fixed code tag (e.g. `detectors-v4`) and `RUNS` to at most two runs, one per GPU.
+   `SMOKE = True` gives a short timing version (1 epoch on 10% of train); `BATCH` holds only the protocol's
+   out-of-memory fallback (RD 4, FR 2).
 2. Version 1: Save Version (Save & Run All), GPU T4 x2, Internet on, inputs: image dataset + `vgra-index`.
 3. Each run stops cleanly when the next epoch would not fit in `train.max_hours` (11 h) and keeps
    `weights/resume.pt`. The summary cell prints `STOPPED FOR TIME` or `FINISHED`.

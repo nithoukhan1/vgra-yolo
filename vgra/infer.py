@@ -1,7 +1,10 @@
 """Reusable single-image inference (S1): detections, per-image class scores, true-positive tables.
 
-Works on any list of images (any split; paired or unpaired). Settings follow Ultralytics
+Works on any list of images (any split; paired or unpaired). YOLO settings follow Ultralytics
 validation: square letterbox, NMS with conf 0.001, IoU 0.7, max 300 boxes, multi-label.
+RT-DETR (`predict_rtdetr`) follows the Ultralytics RT-DETR validator (`vgra.rtdetr.RDValidator`): image stretched
+to a square (no letterbox), no NMS, one class per query (its highest score), conf > 0.001; the image score of a class
+is its highest score over the 300 queries. Faster R-CNN inference is in vgra/frcnn.py and returns the same tables.
 An optional `extra(feats, batch)` callback returns extra per-image scores (N, nc), for example the
 presence branch's probabilities; they are stored next to the detector's own scores.
 """
@@ -32,6 +35,19 @@ def image_dataset(paths: list, classes: list, imgsz: int, list_file: str | Path,
     return YOLODataset(img_path=str(list_file), imgsz=int(imgsz), augment=bool(augment),
                        hyp=pair_hyp(imgsz, hyp_overrides), rect=False, stride=32, pad=0.0,
                        prefix=f"{list_file.stem}: ", task="detect", data=data)
+
+
+def rtdetr_dataset(paths: list, classes: list, imgsz: int, list_file: str | Path):
+    """Ultralytics RTDETRDataset over an explicit image list, exactly as the RT-DETR validator builds it
+    (no augmentation, no rect: every image stretched to imgsz x imgsz)."""
+    from ultralytics.models.rtdetr.val import RTDETRDataset
+
+    list_file = Path(list_file)
+    list_file.parent.mkdir(parents=True, exist_ok=True)
+    list_file.write_text("\n".join(sorted(paths)) + "\n", encoding="utf-8")
+    data = {"names": dict(enumerate(classes)), "nc": len(classes), "channels": 3}
+    return RTDETRDataset(img_path=str(list_file), imgsz=int(imgsz), augment=False, hyp=pair_hyp(imgsz), rect=False,
+                         prefix=f"{list_file.stem}: ", data=data)
 
 
 def image_loader(ds, batch: int = 16, shuffle: bool = False, workers: int = 2, seed: int = 0) -> DataLoader:
@@ -96,5 +112,46 @@ def predict(model, loader, classes: list, imgsz: int, info: dict, conf: float = 
     ex = ["extra"] if extra is not None else []
     dets = pd.DataFrame(det_rows, columns=["image_id", "patient_id", "view", "cls", "conf", "own_max", *ex, "tp50"])
     imgs = pd.DataFrame(img_rows, columns=["image_id", "patient_id", "view", "cls", "own_max", *ex, "present", "n_boxes"])
+    tp_all = np.concatenate(tps) if tps else np.zeros((0, 10), dtype=bool)
+    return dets, imgs, tp_all
+
+
+@torch.no_grad()
+def predict_rtdetr(model, loader, classes: list, imgsz: int, info: dict, conf: float = 0.001,
+                   device=None) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
+    """RT-DETR over a loader of `rtdetr_dataset`. Same outputs as `predict`. Detections as the Ultralytics RT-DETR
+    validator makes them (per query: highest class score and its class; boxes x imgsz; conf > `conf`);
+    own_max of a class = its highest score over all queries of the image."""
+    from ultralytics.utils.ops import xywh2xyxy
+
+    device = device or next(model.parameters()).device
+    half = next(model.parameters()).dtype == torch.float16
+    nc = len(classes)
+    det_rows, img_rows, tps = [], [], []
+    for batch in loader:
+        x = batch["img"].to(device).float() / 255
+        out = model(x.half() if half else x)
+        y = (out[0] if isinstance(out, (list, tuple)) else out).float()  # (N, 300, 4 + nc)
+        boxes, scores = y.split((4, nc), dim=-1)
+        maxs = scores.amax(1).cpu().numpy()  # (N, nc) highest score of each class in each image
+        for j, f in enumerate(batch["im_file"]):
+            image_id, patient, view = info[path_key(f)]
+            score, cls = scores[j].max(-1)
+            order = score.argsort(descending=True)
+            keep = order[score[order] > conf]
+            d = torch.cat([xywh2xyxy(boxes[j] * imgsz)[keep], score[keep, None], cls[keep, None].float()], -1).cpu()
+            sel = batch["batch_idx"] == j
+            gt_cls = batch["cls"][sel].view(-1).long()
+            gt_xyxy = xywh2xyxy(batch["bboxes"][sel]) * imgsz
+            tp = pm.match(d[:, :4], d[:, 5].long(), gt_xyxy, gt_cls)
+            tps.append(tp)
+            n_boxes = np.bincount(gt_cls.numpy(), minlength=nc)
+            for c in range(nc):
+                img_rows.append([image_id, patient, view, c, float(maxs[j, c]), int(n_boxes[c] > 0), int(n_boxes[c])])
+            for r in range(d.shape[0]):
+                c = int(d[r, 5])
+                det_rows.append([image_id, patient, view, c, float(d[r, 4]), float(maxs[j, c]), bool(tp[r, 0])])
+    dets = pd.DataFrame(det_rows, columns=["image_id", "patient_id", "view", "cls", "conf", "own_max", "tp50"])
+    imgs = pd.DataFrame(img_rows, columns=["image_id", "patient_id", "view", "cls", "own_max", "present", "n_boxes"])
     tp_all = np.concatenate(tps) if tps else np.zeros((0, 10), dtype=bool)
     return dets, imgs, tp_all
