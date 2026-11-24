@@ -20,8 +20,9 @@ per account; please do not share your login). Nothing in the code needs editing.
    - Notebook B: `REF = "detectors-v2"`, `RUNS = [("configs/V8.yaml", 0, 0), ("configs/V8.yaml", 1, 1)]`
    - Notebook C: `REF = "detectors-v3"`, `RUNS = [("configs/V8R.yaml", 0, 0), ("configs/V8R.yaml", 1, 1)]`
      (YOLOv8s + ResCBAM; output dataset name for example `vgra-v8r-s0-s1`)
-   - Notebook D: `REF = "detectors-v4"`, `RUNS = [("configs/RD.yaml", 0, 0), ("configs/FR.yaml", 0, 1)]`
-     (RT-DETR-l and Faster R-CNN). Notebook D starts with a short smoke version: see the section below.
+   - Notebook D: `REF = "detectors-v4"` (from its third full version: `"detectors-v5"`, the Faster R-CNN resume
+     fix), `RUNS = [("configs/RD.yaml", 0, 0), ("configs/FR.yaml", 0, 1)]` (RT-DETR-l and Faster R-CNN).
+     Notebook D starts with a short smoke version: see the section below.
 4. **Save Version -> Save & Run All (Commit)**. It runs in the background for about 11-12 hours; you can
    close the browser.
 5. When it ends, open the version's log and send the project owner the output of the last cell
@@ -31,9 +32,13 @@ per account; please do not share your login). Nothing in the code needs editing.
 1. Add as input the **output of this same notebook** (Add Input -> Your Work -> this notebook).
    If the input is already there, make sure it points to the newest version.
 2. Change nothing else. **Save Version -> Save & Run All (Commit)** again.
-3. After about 10 minutes you can open the running log: it should say
-   `auto-resume: found ... (N epochs logged)` for each run.
-4. Repeat until the last cell shows `FINISHED` for both runs (usually 3 versions).
+3. Before Save Version, open the attached input in the right panel: `runs` must hold the run folders and
+   `logs` the log files of the newest version (its date and time in the file names). Kaggle keeps an input at the
+   version it was added with; an older version makes the runs start again from epoch 1.
+4. Repeat until the last cell shows `FINISHED` for both runs (usually 3 versions). Each run's own log
+   (Output -> `logs`) starts with `auto-resume: found ... (N epochs logged)`.
+5. If the last cell shows `CRASHED (exit code ...)` for a run, send the project owner the lines it prints and wait
+   before the next version; the run's saved epochs are kept.
 
 ## Notebook D (RT-DETR and Faster R-CNN): a short smoke version first
 1. Smoke version: the settings as in the notebook (`SMOKE = True`, `BATCH = {}`). Each run trains 1 epoch on 10%

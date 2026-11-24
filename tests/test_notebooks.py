@@ -106,7 +106,7 @@ def test_training_settings_are_notebook_d():
     from vgra import utils
 
     ns = train_settings()
-    assert ns["REF"] == "detectors-v4" and ns["SMOKE"] is True and ns["BATCH"] == {}
+    assert ns["REF"] == "detectors-v5" and ns["SMOKE"] is True and ns["BATCH"] == {}
     assert [(c, s) for c, s, _ in ns["RUNS"]] == [("configs/RD.yaml", 0), ("configs/FR.yaml", 0)]
     assert sorted(g for _, _, g in ns["RUNS"]) == [0, 1]  # one run per GPU
     summary = cells(NB_TRAIN)[4]
@@ -153,6 +153,7 @@ def test_training_commands(tmp_path, monkeypatch, smoke, batch):
         assert (cmd[-2:] == ["--batch", str(batch[exp])]) if exp in batch else "--batch" not in cmd
     logs = sorted(p.name for p in (tmp_path / "logs").iterdir())
     assert all(("_smoke_" in n) == smoke for n in logs) and len(logs) == 2
+    assert ns["EXIT"] == {"RD_s0": 0, "FR_s0": 0}  # the summary cell reads the exit codes
 
 
 def _summary(tmp_path, capsys, **change):
@@ -193,3 +194,22 @@ def test_training_summary_full_runs(tmp_path, capsys):
     _run(tmp_path, "FR_s0", batch=4, epochs_total=9, finished=False, valid={"map50": 0.5, "map50_95": 0.3})
     out = _summary(tmp_path, capsys, SMOKE=False)
     assert "FR_s0: STOPPED FOR TIME (attach this output, run the next version) | batch 4 | epochs 9" in out
+
+
+def test_training_summary_reports_a_crash(tmp_path, capsys):
+    """2026-11-24, notebook D version 2: FR_s0 crashed at resume, but the summary read the metrics.json restored from
+    version 1 and printed STOPPED FOR TIME. The exit code now decides first."""
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "logs" / "RD_s0_20261124-0440.log").write_text("RUN STATUS: STOPPED FOR TIME after 64 epochs\n")
+    _run(tmp_path, "RD_s0", batch=8, epochs_total=64, finished=False, valid={"map50": 0.6372, "map50_95": 0.408})
+    (tmp_path / "logs" / "FR_s0_20261124-0440.log").write_text(
+        "auto-resume: found ... (15 epochs logged)\nTraceback (most recent call last):\nValueError: loaded state dict "
+        "contains a parameter group that doesn't match the size of optimizer's group\n")
+    _run(tmp_path, "FR_s0", batch=4, epochs_total=15, finished=False, valid={"map50": 0.5868, "map50_95": 0.3449})
+    out = _summary(tmp_path, capsys, SMOKE=False, EXIT={"RD_s0": 0, "FR_s0": 1})
+    assert "RD_s0: STOPPED FOR TIME" in out and "batch 8 | epochs 64" in out
+    assert "FR_s0: CRASHED (exit code 1)" in out and "ValueError: loaded state dict" in out
+    assert "FR_s0: STOPPED FOR TIME" not in out
+    (tmp_path / "logs" / "FR_s0_20261124-0440.log").write_text("torch.OutOfMemoryError: CUDA out of memory.\n")
+    out = _summary(tmp_path, capsys, SMOKE=False, EXIT={"RD_s0": 0, "FR_s0": 1})
+    assert "FR_s0: OUT OF MEMORY" in out and "FR_s0: STOPPED FOR TIME" not in out and "CRASHED" not in out

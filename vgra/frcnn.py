@@ -41,20 +41,40 @@ MAX_SKIPPED = 10  # batches with a non-finite loss are skipped; more than this i
 # model and checkpoints
 # ----------------------------------------------------------------------------------------------
 
+TRAINABLE_BACKBONE_LAYERS = 3  # torchvision's default with pretrained weights: conv1, bn1 and layer1 stay frozen
+
+
+def freeze_backbone(model, trainable_layers: int = TRAINABLE_BACKBONE_LAYERS):
+    """torchvision's rule (`_resnet_fpn_extractor`): only the last `trainable_layers` ResNet stages train.
+
+    torchvision applies it only when pretrained weights are given; without them every layer trains. A model rebuilt
+    without weights (to resume or evaluate a run) must therefore apply it here, or it has more trainable parameters
+    than the run's optimizer state (2026-11-24: notebook D version 2 could not resume FR_s0)."""
+    train = ["layer4", "layer3", "layer2", "layer1", "conv1"][:trainable_layers]
+    if trainable_layers == 5:
+        train.append("bn1")
+    for name, p in model.backbone.body.named_parameters():
+        if not any(name.startswith(t) for t in train):
+            p.requires_grad_(False)
+    return model
+
+
 def build_model(n_classes: int, weights: str | None = "COCO_V1", imgsz: int = 1024, score_thresh: float = 0.001,
                 nms_iou: float = 0.5, max_det: int = 300):
     """torchvision Faster R-CNN R50-FPN v2. `weights` = a FasterRCNN_ResNet50_FPN_V2_Weights name or None
-    (random weights, used to rebuild a trained checkpoint and in tests; nothing is downloaded then)."""
+    (random weights, used to rebuild a trained checkpoint and in tests; nothing is downloaded then). Either way the
+    backbone's conv1, bn1 and layer1 are frozen, as torchvision does for training from pretrained weights."""
     from torchvision.models.detection import FasterRCNN_ResNet50_FPN_V2_Weights, fasterrcnn_resnet50_fpn_v2
     from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 
     w = getattr(FasterRCNN_ResNet50_FPN_V2_Weights, weights) if weights else None
     model = fasterrcnn_resnet50_fpn_v2(weights=w, weights_backbone=None, min_size=int(imgsz), max_size=int(imgsz),
                                        box_score_thresh=float(score_thresh), box_nms_thresh=float(nms_iou),
-                                       box_detections_per_img=int(max_det))
+                                       box_detections_per_img=int(max_det),
+                                       trainable_backbone_layers=TRAINABLE_BACKBONE_LAYERS if w else None)
     in_features = model.roi_heads.box_predictor.cls_score.in_features
     model.roi_heads.box_predictor = FastRCNNPredictor(in_features, int(n_classes) + 1)
-    return model
+    return freeze_backbone(model)
 
 
 def model_meta(cfg: dict, n_classes: int) -> dict:

@@ -153,6 +153,44 @@ def test_frcnn_train_stops_for_time_and_resumes(tiny, tmp_path):
     assert m2["valid"]["classes_evaluated"] == 3
 
 
+def test_frcnn_resumes_a_run_trained_from_pretrained_weights(tiny, tmp_path, monkeypatch):
+    """2026-11-24, notebook D version 2: FR_s0 (trained from COCO weights) could not be resumed. torchvision freezes
+    conv1, bn1 and layer1 only when pretrained weights are given; the model rebuilt without them to resume had every
+    layer trainable (209 tensors instead of 176) and the optimizer state did not load."""
+    from torchvision.models.detection import FasterRCNN_ResNet50_FPN_V2_Weights, fasterrcnn_resnet50_fpn_v2
+
+    _, index, _ = tiny
+    from vgra import lists
+
+    fake_coco = fasterrcnn_resnet50_fpn_v2(weights=None, weights_backbone=None, num_classes=91).state_dict()
+    monkeypatch.setattr(FasterRCNN_ResNet50_FPN_V2_Weights, "get_state_dict", lambda self, *a, **k: fake_coco)
+    trainable = lambda m: [n for n, p in m.named_parameters() if p.requires_grad]  # noqa: E731
+    coco, rebuilt = frcnn.build_model(9, "COCO_V1", 96), frcnn.build_model(9, None, 96)
+    assert trainable(coco) == trainable(rebuilt) and len(trainable(coco)) == 176
+    assert not [n for n in trainable(coco) if n.startswith(("backbone.body.conv1", "backbone.body.bn1",
+                                                            "backbone.body.layer1"))]
+    cfg = utils.load_config(REPO / "configs" / "FR.yaml")  # weights COCO_V1, as on Kaggle
+    cfg["train"].update(epochs=2, warmup_iters=2, lr_steps=[1], imgsz=96)
+    label_of = dict(zip(index["path"], index["label_path"]))
+    train = lists.train_image_paths(index, "orig")[:4]
+    valid = split_rows(index, "valid")
+    data = (train, [label_of[p] for p in train], list(valid["path"]), list(valid["label_path"]), infer.image_info(index))
+
+    class StopNow:
+        def should_stop(self, seconds):
+            return True
+
+        def elapsed(self):
+            return 0.0
+
+    run = tmp_path / "FR_s0"
+    m1 = frcnn.train_run(cfg, run, *data, seed=0, device="cpu", batch=2, budget=StopNow(), workers=0, log=lambda *a: None)
+    assert m1["stopped_for_time"] and m1["epochs_total"] == 1
+    m2 = frcnn.train_run(cfg, run, *data, seed=0, device="cpu", resume=str(run / "weights" / "resume.pt"), workers=0,
+                         log=lambda *a: None)
+    assert m2["finished"] and m2["epochs_total"] == 2
+
+
 def test_frcnn_skips_non_finite_batches_and_stops_when_diverged(tiny, tmp_path, monkeypatch):
     _, index, _ = tiny
     from vgra import lists
