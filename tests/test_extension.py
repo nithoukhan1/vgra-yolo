@@ -363,3 +363,8 @@ def test_smoke_training_then_i1_i3_i4(tiny, tmp_path, cfg_name, imgsz, weights, 
     r = subprocess.run([sys.executable, str(REPO / "scripts" / "04_premise_test.py"), "--runs", f"{cfg_name}_s0",
                         "--split", "valid", "--boot", "20", "--from-pred", str(pred), "--out", str(out)], **RUN)
     assert r.returncode == 0 and "GATE 2:" in r.stdout, r.stdout[-3000:] + r.stderr[-3000:]
+
+    r = subprocess.run([sys.executable, str(REPO / "scripts" / "12_study_level.py"), "--pred", str(pred), "--runs",
+                        f"{cfg_name}_s0", "--eval", "valid", "--boot", "20"], **RUN)  # I2 from the same tables
+    assert r.returncode == 0 and "STUDY-LEVEL DONE" in r.stdout, r.stdout[-3000:] + r.stderr[-3000:]
+    assert (pred / "study_valid" / "settings.csv").is_file()

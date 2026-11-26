@@ -40,17 +40,42 @@ def test_unfinished_runs_block_only_the_test_session():
     assert "(problems if OPEN_TEST else warnings)" in check
 
 
-def test_frozen_weights_manifest_matches_the_test_session_runs():
+def test_frozen_weights_manifest_matches_the_test_sessions():
     import re
+
+    from vgra import utils
 
     frozen = json.loads((NB.parents[1] / "docs" / "final_weights.json").read_text(encoding="utf-8"))
     runs = {k: v for k, v in frozen.items() if not k.startswith("_")}
     settings = cells()[0]
-    planned = re.search(r"test session: (\[.*?\])", settings).group(1)
-    assert set(json.loads(planned)) == set(runs)
+    part_a = json.loads(re.search(r"Part A \(done 2026-11-21, dataset vgra-final-detectors\): (\[.*?\])", settings).group(1))
+    ext = json.loads(re.search(r"extension detectors \(protocol 11\.3, dataset vgra-rd-fr-s0\): (\[.*?\])", settings).group(1))
+    assert len(part_a) == 8 and ext == ["RD_s0", "FR_s0"] and not set(part_a) & set(ext)
+    assert set(part_a) | set(ext) == set(runs)
     for name, v in runs.items():
+        det, seed = name.rsplit("_s", 1)
         assert re.fullmatch(r"[0-9a-f]{64}", v["sha256"]), name
-        assert v["epochs"] == 100 and v["detector"] == name.rsplit("_s", 1)[0]
+        assert v["detector"] == det and v["seed"] == int(seed)
+        assert v["epochs"] == utils.load_config(NB.parents[1] / "configs" / f"{det}.yaml")["train"]["epochs"], name
+        assert 1 <= v["best_epoch"] <= v["epochs"], name
+
+
+@pytest.mark.parametrize("open_test", [False, True])
+@pytest.mark.parametrize("runs,from_pred", [(["RD_s0", "FR_s0"], True), (["B0_s0", "B1_s0"], False)])
+def test_i3_reads_the_i1_tables_for_rd_and_fr(runs, from_pred, open_test):
+    """Protocol section 10 (2026-11-23): for RD and FR, I3 reads the I1 tables instead of running the detector again;
+    the YOLO runs keep the route of the Part A session."""
+    check = cells()[2]
+    kinds = check[check.index("from vgra import utils as vgra_utils"):check.index('print("detector kinds')]
+    ns = {"RUNS": runs}
+    exec(kinds.replace("/kaggle/working/vgra-yolo", NB.parents[1].as_posix()), ns)
+    assert ns["I3_FROM_PRED"] is from_pred
+    called = []
+    ns.update(READY=True, OPEN_TEST=open_test, RUN_ARGS=" ".join(runs), sh=called.append)
+    exec(cells()[4], ns)
+    assert len(called) == 1 and "scripts/04_premise_test.py" in called[0]
+    assert ("--from-pred /kaggle/working/runs/predictions" in called[0]) is from_pred
+    assert ("--open-test" in called[0]) is open_test and ("--split test" in called[0]) is open_test
 
 
 def test_hash_check_blocks_only_the_test_session():
